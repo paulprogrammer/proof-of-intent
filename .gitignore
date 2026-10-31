@@ -1,0 +1,10 @@
+# Derived draft artifacts
+*.xml
+*.txt
+*.html
+*.pdf
+
+# Tool cache and temporary artifacts
+.cache/
+*.log
+*.err
