@@ -27,7 +27,6 @@ normative:
   RFC2119:
   RFC6234:
   RFC6749:
-  RFC6755:
   RFC6838:
   RFC7515:
   RFC7517:
@@ -65,12 +64,8 @@ informative:
     date: 2026-10
     seriesinfo:
       Internet-Draft: draft-williams-oauth-poi-chained-state-00
-  RFC7997:
-  RFC9052:
-  RFC9421:
-  RFC9635:
-  I-D.ietf-scitt-architecture:
-  I-D.ietf-oauth-transaction-tokens:
+  RFC6755:
+  RFC9943:
 
 --- abstract
 
@@ -108,7 +103,7 @@ This document specifies **PoI Core**, the stateless foundation of the Proof-of-I
 
 ## Requirements Language
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 ({{RFC2119}}, {{RFC8174}}) when, and only when, they appear in all capitals, as shown here.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 {{!RFC2119}} {{!RFC8174}} when, and only when, they appear in all capitals, as shown here.
 
 ## Terminology
 
@@ -372,7 +367,7 @@ A Resource Server or offline verifier validating a PoI Core envelope (`[R0, R1]`
 Because EIK certificates (`KCT`) are short-lived, an attacker who compromises a client host *after* a KCT expires (or just before expiry) might attempt to forge a backdated assertion timestamped inside `[nbf, exp]` and inject it into an audit database later.
 
 To defeat backdated audit forgery:
-1. Immediately upon verifying a PoIE while the KCT is within its active `[nbf, exp]` window, the Resource Server (or an append-only transparency service per {{I-D.ietf-scitt-architecture}}) MUST generate a **Countersigned Intent Receipt (CIR)** (`typ: "poi+jwt;kind=rcpt"`).
+1. Immediately upon verifying a PoIE while the KCT is within its active `[nbf, exp]` window, the Resource Server (or an append-only transparency service per {{RFC9943}}) MUST generate a **Countersigned Intent Receipt (CIR)** (`typ: "poi+jwt;kind=rcpt"`).
 2. The CIR MUST include `received_at` (server ingestion NumericDate), `intent_id`, `head_node_hash` (`H1`), `committed_params_hash`, and the Resource Server's cryptographic signature.
 3. Offline auditors MUST verify that `kcert.nbf <= cir.received_at <= kcert.exp` for all Tier 1 assertions in the receipted chain.
 
@@ -504,7 +499,7 @@ To mitigate signing oracle abuse for Tier 1 keys, implementations SHOULD isolate
 
 ## Backdated Forgery After Key Expiry
 
-Verification of `client_iat` alone is insufficient for offline non-repudiation because client clocks can be falsified. Offline audit verification MUST rely on the Resource Server's Countersigned Intent Receipt (`cir.received_at`) or an external timestamp authority / transparency log ({{I-D.ietf-scitt-architecture}}) to prove the signature existed prior to `kcert.exp`.
+Verification of `client_iat` alone is insufficient for offline non-repudiation because client clocks can be falsified. Offline audit verification MUST rely on the Resource Server's Countersigned Intent Receipt (`cir.received_at`) or an external timestamp authority / transparency log ({{RFC9943}}) to prove the signature existed prior to `kcert.exp`.
 
 
 # Privacy Considerations

@@ -41,10 +41,6 @@ normative:
   RFC8785:
   RFC9457:
 
-informative:
-  RFC9635:
-  I-D.ietf-scitt-architecture:
-
 --- abstract
 
 The Proof-of-Intent (PoI) Core Protocol (draft-williams-oauth-poi-core-00) specifies a stateless, two-node (`[R0, R1]`) cryptographic framework for verifying synchronous Human-in-the-Loop (HITL) approvals, rejections, and single-hop parameter modifications. However, high-consequence enterprise workflows -- such as multi-tier loan underwriting, dual-control clinical orders, and asynchronous batch agent queues -- frequently require asynchronous review, hierarchical escalation when a human modification exceeds the first operator's organizational authority, and deterministic conflict resolution when multiple approvers act concurrently.
@@ -74,7 +70,7 @@ Consistent with {{POI-CORE}}, organizational policy rules (such as which dollar 
 
 ## Requirements Language
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 ({{RFC2119}}, {{RFC8174}}) when, and only when, they appear in all capitals, as shown here.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 {{!RFC2119}} {{!RFC8174}} when, and only when, they appear in all capitals, as shown here.
 
 ## Terminology
 
@@ -311,13 +307,13 @@ In asynchronous workflows, Resource Servers MUST NOT issue long-lived ICO challe
 
 ## Lineage Integrity Across Escalation Hops
 
-In multi-party escalations (`R0 -> R1 -> R2`), a compromised intermediary orchestrator might attempt to strip `R1` or alter the first human's justification to influence the next-line approver (`R2`). Because `H1` commits to the entire signed `R1` assertion JWS (including `asserted_params_hash` and `justification`) and the Resource Server's escalation ICO signs `prior_chain: [R0, R1]`, any tampering with intermediate nodes invalidates both the hash chain and the Resource Server's challenge signature.
+In multi-party escalations (`R0 -> R1 -> R2`), a compromised intermediary orchestrator might attempt to strip `R1` or alter the first human's justification to influence the next-line approver (`R2`). Because `H1` commits to the entire signed `R1` assertion JWS ({{RFC7515}}, including `asserted_params_hash` and `justification`) and the Resource Server's escalation ICO signs `prior_chain: [R0, R1]`, any tampering with intermediate nodes invalidates both the hash chain and the Resource Server's challenge signature.
 
 Furthermore, per Step 4 of Section 6, verifiers MUST NOT count `APPROVE` signatures at indices `j < k_last_supercede` toward quorum requirements for parameters modified at `k_last_supercede`, preventing an attacker or confused policy engine from treating a prior approval of `R0` as an approval of modified parameters in `Rk`.
 
 ## Denial-of-Service Mitigation via Bounded Chain Depth
 
-Because verifying each node in `chain` requires up to two asymmetric public-key signature verifications (`kcert` and `assertion_jws`), an unbounded `chain` array would allow a malicious client to cause CPU exhaustion by submitting thousands of self-superceding nodes in a single request. Verifiers MUST enforce `MAX_CHAIN_LENGTH` (Section 6 Step 1) prior to executing any cryptographic signature checks.
+Because verifying each node in `chain` requires up to two asymmetric public key signature verifications (`kcert` and `assertion_jws`), an unbounded `chain` array would allow a malicious client to cause CPU exhaustion by submitting thousands of self-superceding nodes in a single request. Verifiers MUST enforce `MAX_CHAIN_LENGTH` (Section 6 Step 1) prior to executing any cryptographic signature checks.
 
 
 # IANA Considerations
