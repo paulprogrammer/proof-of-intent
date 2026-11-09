@@ -79,6 +79,7 @@ informative:
     author:
       - ins: I. Schrock
         name: Iman Schrock
+        org: EMILIA Protocol, Inc.
     date: 2026
     seriesinfo:
       Internet-Draft: draft-schrock-ep-authorization-receipts-13

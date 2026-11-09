@@ -11,11 +11,11 @@
   - [x] Codified the full replacement invariant (omitted parameters from `R0` must not survive into executable input).
 - [x] **Application Crash Recovery Demarcation (Section 9.4)**:
   - [x] Clarified boundary between cryptographic intent verification and application-level 2PC/idempotency.
-- [ ] **PSEA Schema Precision Update**:
-  - [ ] Update Section 6.3.3.2 and Section 7.1 to explicitly document the JWS header distinction: media type `application/psea+jwt` vs. protected header `typ: "psea-proof+jwt"`.
-  - [ ] Document the 300-second temporal lifetime (`exp - iat = 300`) and verification clock anchoring against `cir.received_at`.
-- [ ] **Informative Citations Polish**:
-  - [ ] Validate final Datatracker URIs and revision targets for `draft-yossif-psea-03` and `draft-schrock-ep-authorization-receipts-13`.
+- [x] **PSEA Schema Precision Update**:
+  - [x] Update Section 6.3.3.2 and Section 7.1 to explicitly document the JWS header distinction: media type `application/psea+jwt` vs. protected header `typ: "psea-proof+jwt"`.
+  - [x] Document the 300-second temporal lifetime (`exp - iat = 300`) and verification clock anchoring against `cir.received_at`.
+- [x] **Informative Citations Polish**:
+  - [x] Validate final Datatracker URIs and revision targets for `draft-yossif-psea-03` and `draft-schrock-ep-authorization-receipts-13`.
 
 ---
 
