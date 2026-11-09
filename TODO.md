@@ -14,40 +14,43 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
   - [x] Codified the full replacement invariant (omitted parameters from `R0` must not survive into executable input).
 - [x] **PSEA Header and Media Type Distinction**: Section 6.3.3.2 and Section 7.1 document `application/psea+jwt` (media type) vs. protected header `typ: "psea-proof+jwt"`.
 
-### 1.2 Reopened
+### 1.2 Draft -01 Corrections (done 2026-11-09, uncommitted; idnits clean)
 
-- [ ] **Attestation Profile Conformance (Section 6.3)** (reopened)
-  - [x] Formulated the 5 abstract attestation preconditions.
-  - [ ] Add decision binding to the preconditions. Precondition 1 and the precondition 5 extraction tuple omit `decision`, so an attestation can be valid without committing to APPROVE vs. REJECT vs. SUPERCEDE. This is the spec-level root of the WebAuthn relabel bug (Section 2.2).
-  - [ ] Correct the PSEA applicability assessment (6.3.3.2). As profiled, PSEA binds neither `target_node_hash` nor `intent_id`, so it fails preconditions 2 and 3 under the draft's own MUST-reject rule. Rewrite as "compliant when profiled as follows": require `eat_nonce` = the parent node hash (or an intent/challenge digest), `psea_stepup_selection` carrying the decision, and mandatory appraisal of `aud`, `psea_op` and `psea_tier`.
-  - [ ] Define the mapping from `psea_tier` to PoI Tier 2 and Tier 3. PSEA does not distinguish platform from roaming authenticators, so the Tier 3 claim needs a basis or should be dropped.
-  - [ ] Resolve the WebAuthn challenge contradiction. 6.3.3.3 (line ~392) says the Resource Server computes the challenge hash; 7.1 step 3 (line ~422) says `SHA-256(JCS(assertion_payload))`. Only the second can cover the decision and SUPERCEDE parameters. Keep 7.1.
-  - [ ] State that Direct WebAuthn needs Resource Server enrollment state (credential ID to `sub` and credential class), which conflicts with "statelessly" in precondition 5.
-- [ ] **Application Crash Recovery Demarcation (Section 9.4)** (reopened)
-  - Note: Does not answer a reviewer's actual question. `head_node_hash` changes on reapproval, and nothing requires `intent_id` to survive a fresh challenge.
-  - [ ] Require that a fresh challenge for the same business occurrence reuse the same `intent_id`.
-  - [ ] State that retries happen after admission and are keyed on the CIR; re-presenting a consumed PoIE is a 409 by design, which contradicts the current "replays ... without user intervention" wording.
-  - [ ] Remove or soften the MUST placed on downstream providers; it is outside protocol authority.
-- [ ] **PSEA Temporal Lifetime** (reopened)
-  - Note: 6.3.3.2 states a strict `iat <= t_eval <= exp`, while the verifier allows 60 s of clock skew. Pick one and make the code and text match.
-- [ ] **Informative Citations Polish** (reopened)
-  - Note: The `PSEA` reference entry (lines ~70-73) is wrong against Datatracker.
-  - [ ] Title: "PSEA Token Profile: An EAT Profile for Action-Bound, User-Verification-Gated Transaction-Confirmation Evidence".
-  - [ ] Organization: Yuthent (currently "Yuthentic").
-  - [ ] Date: 2026-10-08 for -03 (currently 2026-02).
-  - [x] `EP-RECEIPTS` entry verified: title, author, organization and -13 revision match Datatracker.
+- [x] **Attestation Profile Conformance (Section 6.3)**: six preconditions (added Decision Commitment; Intent and Challenge Binding no longer accepts a validity window alone; extraction tuple includes decision and challenge_id); tier ordering and enrollment-derived tiers; PSEA rewritten as "compliant when profiled" (aud/iss/op/tier, `eat_nonce`, `psea_stepup_selection`, `jti`, counter, SUPERCEDE rejected, tier from enrollment); WebAuthn challenge computed by the Signing Vault from `assertion_payload`; enrollment state stated.
+- [x] **Wire format**: kept the `attestation` container (Section 6.3.1) and made it precise; session-key format is `application/poi+jwt;kind=assert` (matches the `kind` table); WebAuthn format is the URN `urn:ietf:params:oauth:poi:attestation:webauthn` instead of the unregistered `application/webauthn+json`.
+- [x] **Section 9.4**: stable `intent_id` across reapproval (Section 5.2), retries after admission keyed on `intent_id`/CIR, unknown outcomes block reapproval, downstream idempotency softened to SHOULD.
+- [x] **PSEA temporal lifetime** aligned with the 60-second skew.
+- [x] **Citations**: PSEA title, organization (Yuthent) and date (2026-10-08); EP-RECEIPTS date (2026-09-11); RFC 8126 and RFC 7942 added.
+- [x] **Stateless framing**: abstract, Section 1.2 and Section 7 now distinguish stateless evidence verification from stateful admission.
+- [x] **Consumed-state requirements**: Section 7.1 step 5 (atomic, durable, shared, retained to `exp` plus skew, fail closed) and new Section 9.6.
+- [x] **Replay key**: `challenge_id`; Section 7.1 also enforces `ico.iss`.
+- [x] **CIR**: defined as admission evidence; EP-RECEIPTS alignment sentence replaced with a mapping caveat.
+- [x] **IANA**: Specification Required cites RFC 8126; registry entries corrected; attestation URN registered.
+- [x] **`display_facts`**: one shape (`title` plus ordered `fields` of `label`/`value`), matching the implementation.
+- [x] **Digest encoding**: `sha256:` plus lowercase hex; profile encodings compared on decoded digest; node hash encoding defined in Section 6.1.
+- [x] **Implementation Status** section (RFC 7942) pointing at `poi-core-01-rc.1`, with known gaps and per-repository licenses (Collet is BSL 1.1).
 
-### 1.3 New Items from the 2026-11-09 Review
+### 1.3 Remaining Specification Work
 
-- [ ] **Stateless vs. Stateful Framing**: The abstract, Section 1.2 and the Section 7 title say "stateless" while 7.1 requires a consumed-challenge check. Reframe as stateless evidence verification plus stateful admission.
-- [ ] **Consumed-State Requirements (Section 7.1)**: Require consumed state to be durable across restart, shared across replicas, and retained for at least `exp + ClockSkewTolerance`.
-- [x] **Replay Key Consistency** (2026-11-09): Collet now consumes the verified `challenge_id`, matching draft Section 7.1. Business-occurrence idempotency across reapproval (a stable `intent_id`) remains the Section 9.4 rework and the completion-record work.
-- [ ] **CIR Alignment Claim (Section 7.2 item 4, line ~437)**: Drop "structural semantics ... align with" EP receipts, or scope it to "can be mapped to". Label matching is insufficient, and EP separates pre-execution approval evidence from terminal consumption evidence. The CIR is minted before forwarding.
-- [ ] **Wire Format Drift**: The `attestation: {format, token}` container (6.3.1, 7.1 step 3) is not implemented; the code still uses `assertion_jws` / `webauthn_proof`. Either update the code or document the legacy fields.
-- [ ] **IANA Registry Citation (line ~641)**: "Specification Required" cites RFC 8174; it should cite RFC 8126.
-- [ ] **`application/webauthn+json`**: Not a registered media type. Register it in Section 11.1 or switch to a URI identifier.
-- [ ] **`display_facts` Serialization**: Three permitted shapes (string, array, map) undermine deterministic rendering. Consider narrowing to one.
-- [ ] **Chained State Draft Refresh**: `draft-williams-oauth-poi-chained-state-00` still references core -00 and the pre-container node fields. Cut a -01 aligned with core -01.
+- [x] **Chained State Draft Refresh** (2026-11-09, uncommitted): `draft-williams-oauth-poi-chained-state-01` references core -01; drops the "stateless" framing; inherits the attestation container, six preconditions, consume-once admission and Section 9.4; uses the container in the example; adds Section 4.4 (each appended node carries and binds its own escalation or step-up challenge), Section 5.5 (CAS, challenge consumption and terminal transition in one atomic, durable, shared operation), per-node challenge verification in Section 6, Security Considerations 8.3 and 8.4, and an Implementation Status section. Step-up for `SUPERCEDE` excludes PSEA. idnits: no warnings (one comment: no Datatracker stream yet, same as -00).
+- [x] **Core 6.1 node hash** for `k >= 1` defined as `SHA-256(JCS(node))` without `node_hash` (previously undefined beyond `H0`, yet used by CIR `head_node_hash` and the CAS).
+- [ ] **Publish**: push this repository and submit core -01 to Datatracker once the collaborators' review points are settled.
+
+### 1.4 Code Follow-ups Required by Draft -01 (implemented 2026-11-09, uncommitted)
+
+- [x] `attestation` container (`format`, `token`) in mandrel-go (`attestation_container.go`) and the demo vault; legacy node fields still accepted during transition; mixing both, unregistered formats, and format/tier disagreement are rejected.
+- [x] Node hash over the canonical node object for container nodes, computed from the transmitted bytes so unmodeled members are covered (`ComputeNodeHashRaw`).
+- [x] Per-node challenges (chained-state 4.4) with `prior_chain` checked against the chain prefix; result exposes the head challenge, chain, head parent, and last `SUPERCEDE`.
+- [x] `intent_id` reuse per business occurrence (spec, turn, attribute, parameters); completion releases it.
+- [x] Intent ledger (memory and Redis, Lua-atomic): challenge consumption, outcome check, and chain CAS in one operation; outcomes recorded after forwarding (definitive gRPC errors: FAILED; transport/server errors: UNKNOWN; crash: stays ADMITTED); unknown outcomes block new challenges and admissions (`intent_outcome_unknown`, added to core -01); `ResolveIntentOutcome` for reconciliation; completion records kept 30 days.
+- [x] Quorum escalation in Collet using policy `min-approvals`: distinct signers at or after the last `SUPERCEDE`; pending chains get an escalation challenge with `prior_chain`; losing concurrent appends get `stale_head_conflict`.
+- [x] `psea_payload_hash` compared on the decoded digest.
+- [x] Demo vault refuses non-conforming `display_facts` (`ValidateDisplayFacts`); Collet emits display fields in sorted order.
+- [x] Detached `R0` marked OPTIONAL for Resource Servers in core 6.1 (not implemented).
+- [x] **Release:** mandrel-go `v1.1.0-rc.2` (`5fd2bac`) published; Collet pins it (`87f17c5`) and passes standalone build, race tests and `podman build`. All five feature branches pushed and tagged `poi-core-01-rc.2`.
+- [ ] Enforce `editable_schema`: reject `SUPERCEDE` `asserted_params` outside the signed schema (core 5.2). The field was briefly marked deprecated in error; it is an unimplemented feature.
+- [ ] Authenticated operator interface for resolving unknown outcomes (today a library call, `ResolveIntentOutcome`).
+- [ ] Chained-state items that need a domain Resource Server rather than a gateway sidecar: reviewer queue escrow, just-in-time minting on request, `context_state_hash`, per-signer authority-limit escalation, `context_state_drifted`.
 
 ---
 
@@ -89,7 +92,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 
 - [ ] **Standalone Build Broken Until Release**: `GOWORK=off go build` of Collet now fails to compile against the pinned mandrel-go v1.0.17. This is louder than before (it previously built and shipped the old verifier). Resolved by Release Plumbing in 2.4.
 - [ ] **Document new Collet flags in mandrel-web** (`content/docs/reference/collet.md`, or `flag-drift` CI fails): `--poi-trust-store` and its file format, `--user-token-pubkey`, `--user-token-issuer`, `--user-token-audience`, and `--replay-store`.
-- [ ] **Draft: Document `assertion_payload`** on Direct WebAuthn nodes (6.3.3.3) and the PSEA nonce/selection profile (6.3.3.2).
+- [x] **Draft: Document `assertion_payload`** on Direct WebAuthn nodes (6.3.3.3) and the PSEA nonce/selection profile (6.3.3.2). Done in -01 corrections.
 - [ ] **Tier 1 Lineage Now Enforced**: Session-pop assertions must now match `seq` and `target_node_hash`/`supercedes_node_hash`, and REJECT must carry `decision: REJECT`. This is draft-conformant, but check mandrel-demo and Signing Vault clients for compatibility.
 - [x] **Counter Store Durability** (2026-11-09): `RedisStore.Advance` performs the compare-and-advance in a Lua script; semantics are tested identical to `MemoryCounterTracker`.
 
@@ -154,6 +157,10 @@ Newest first. Record what was done, what was found, and what was decided.
 
 ### 2026-11-09
 
+- **Published rc.2.** mandrel-go `v1.1.0-rc.2` on `5fd2bac`; Collet re-pinned (`87f17c5`); coordinated `poi-core-01-rc.2` on all five feature heads (spec `8e39e2d`, go `5fd2bac`, collet `87f17c5`, cli `9ff3d79`, demo `d346900`). Full verification, including all standalone builds and the podman demo, passed before publishing. Drafts' Implementation Status points at rc.2. The parent repository is not pushed.
+- **Implemented the draft -01 code follow-ups (uncommitted).** mandrel-go: attestation container, canonical node hashes, per-node challenges with `prior_chain`, decoded-digest PSEA comparison, `display_facts` validation. Collet: occurrence-stable intent IDs, an atomic intent ledger (memory and Redis) with outcome tracking and completion records, quorum escalation with CAS. Demo vault emits containers. Drafts updated (`intent_outcome_unknown`, detached mode optional, `prior_chain` rule, Implementation Status). Correction from the user: `editable_schema` is unimplemented, not deprecated; restored as optional.
+- **Chained-state -01 and a core node-hash definition (uncommitted).** Aligning the extension surfaced two protocol gaps: node hashes past `H0` were undefined, and escalation or step-up appends had no challenge to bind under core precondition 4. Both are now specified. Both drafts rebuild; idnits reports no warnings or errors.
+- **Draft -01 corrections (uncommitted).** Sections 1, 5, 6.1, 6.3, 7, 8, 9.4, 9.6, 11 and a new Section 12 (Implementation Status). Rebuilt with kramdown-rfc and xml2rfc; idnits 3.3.0 reports no nits on the text and XML outputs. Decision: keep the `attestation` container as the normative wire format; the implementation's legacy fields are listed as a known gap.
 - **Pushed all five feature branches and tagged `poi-core-01-rc.1`** for collaborator inspection (spec `8e39e2d`, go `064baa3`, collet `7c01a2a`, cli `9ff3d79`, demo `ac09f39`). The tag is non-semver on purpose: semverbot reads prerelease `v*` tags as the current version (verified against semverbot v1.7.2 source and blang/semver v4), so `v0.2.0-rc.1` style tags would have skewed Collet and mandrel-cli release numbers. The parent repository is not pushed.
 - **Published mandrel-go `v1.1.0-rc.1`.** Pushed only the mandrel-go feature branch and tag; other feature branches remain local. Collet pinned to the tag and verified standalone and with `podman build`.
 - **Tier 1 admission fixes (uncommitted).** Skew-window replay, random IDs, `challenge_id` replay key, challenge issuer check, Redis replay and counter store with explicit `--replay-store`, and tests. Demo runs against a Redis container by default (`REPLAY_STORE=memory` opt-out) and passes 8/8 in both modes; fixed demo cleanup, which leaked containers in memory mode because podman aborts multi-name stop/rm on a missing name. Release plumbing (tag mandrel-go, bump Collet pin) awaits confirmation because it publishes.
