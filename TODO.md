@@ -117,7 +117,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
   - [x] SUPERCEDE parameter omission, CIR hash, in-flight tampering, replay (sequential, concurrent, TTL, namespaced).
   - [x] Ported the review PoCs as negative tests in `mandrel-go/pkg/poi/webauthn_test.go` and `psea_envelope_test.go`: WebAuthn REJECT relabel, PSEA cross-intent reuse, IdP-key fallback, PSEA SUPERCEDE.
   - [ ] Vector type mismatch test (lands with typed parameters).
-  - [ ] Review regression cases: restart is covered (Redis store test). Still open: provider success with failed completion recording (needs completion records, item 21).
+  - [ ] Review regression cases: restart (Redis store test), unknown outcome after admission, and crash before outcome recording are covered.
   - [x] Replay inside the skew window (`TestReplay_InsideSkewWindow_Negative`).
   - [x] Override token with an arbitrary value must not bypass PoI.
 
@@ -150,8 +150,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 
 ---
 
-
-## 5. Activity Log
+## 4. Activity Log
 
 Newest first. Record what was done, what was found, and what was decided.
 
@@ -180,7 +179,7 @@ Newest first. Record what was done, what was found, and what was decided.
   - Tests: `go test -race` passes in both modules. mandrel-go has 21 new top-level tests (35 cases with subtests) replacing the two prior envelope tests; Collet has 7 new tests. Each negative case asserts its error code or denial reason.
   - Decision: override tokens fail closed because no format is specified anywhere; the old test asserted the bypass as a feature.
   - Decision: PSEA nonce = base64url(parent node digest); selection = base64url(SHA-256(JCS({decision, target_node_hash}))). Pending confirmation with the PSEA author.
-- **Adversarial review of draft -01 and both submodules** against OAuth WG review feedback (OAuth WG review feedback and the PSEA -03 baseline sample).
+- **Adversarial review of draft -01 and both submodules** against OAuth WG review feedback and the PSEA -03 baseline sample.
   - Scope: diffs since Collet 6488224 and mandrel-go 7ac18ba; the full `enforcePoIChallenge` path, `server.go` forwarding, the PSEA and WebAuthn verifier branches, and the -00 to -01 draft diff.
   - Ran `go test` in both submodules: all pass. `GOWORK=off go build` of Collet succeeds against v1.0.17, which revealed the release plumbing gap.
   - Wrote throwaway PoC tests against local mandrel-go. Confirmed WebAuthn decision relabel, PSEA cross-intent reuse, IdP-key fallback with no `exp`, PSEA SUPERCEDE keeping `R0`, and the parameter type mismatch.
