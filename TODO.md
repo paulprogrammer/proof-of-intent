@@ -29,23 +29,23 @@
   - [x] Replace `req.Context` completely with `result.EffectiveParams` in `layers.go` rather than shallow map merging, ensuring omitted keys from `R0` are purged.
 - [x] **Feature: Stateful Consume-Once Check**:
   - [x] Add stateful replay detection (tracking consumed `intent_id` / `jti`) wrapping stateless `VerifyEnvelope`.
-- [ ] **Feature: PSEA Attestation Verifier Integration**:
-  - [ ] Add verifier unpacker for `application/psea+jwt` (`typ: "psea-proof+jwt"`) using the baseline vector.
-  - [ ] Verify claims: `psea_payload_hash`, `psea_uv.verified == true`, and P-256 public key verification.
-- [ ] **Feature: Passkey / WebAuthn Verification**:
-  - [ ] Replace stub in `mandrel-go` returning `unsupported assurance tier` with WebAuthn assertion verification.
-- [ ] **Regression & Conformance Test Suite**:
+- [x] **Feature: PSEA Attestation Verifier Integration**:
+  - [x] Add verifier unpacker for `application/psea+jwt` (`typ: "psea-proof+jwt"`) using the baseline vector.
+  - [x] Verify claims: `psea_payload_hash`, `psea_uv.verified == true`, and P-256 public key verification.
+- [x] **Feature: Passkey / WebAuthn Verification**:
+  - [x] Replace stub in `mandrel-go` returning `unsupported assurance tier` with WebAuthn assertion verification.
+- [x] **Regression & Conformance Test Suite**:
   - [x] Add positive test cases for parameter omission on SUPERCEDE.
   - [x] Add positive and negative test cases for CIR `CommittedParamsHash` calculation and in-flight parameter tampering detection.
   - [x] Add positive, negative, TTL expiration, and concurrent race test cases for replay rejection.
-  - [ ] Ingest the PSEA baseline test vector (`testdata/vectors/psea/psea-03-baseline-sample.json`).
+  - [x] Ingest the PSEA baseline test vector (`testdata/vectors/psea/psea-03-baseline-sample.json`).
 
 ---
 
 ## 3. Test Vectors & Interoperability
 
 - [x] **Test Vector Organization**: Relocate `psea-03-baseline-sample.json` into structured `testdata/vectors/psea/`.
-- [ ] **Reference Verifier Test**: Create a standalone Go/Python test script verifying `psea-03-baseline-sample.json` against the public JWK.
+- [x] **Reference Verifier Test**: Create a standalone Go test verifying `psea-03-baseline-sample.json` against the public JWK (`mandrel-go/pkg/poi/psea_test.go`).
 - [ ] **Upstream Conformance Vectors**: Mirror the 31 negative/positive conformance vectors from `psea-spec` into `testdata/vectors/psea/conformance/`.
 
 ---
