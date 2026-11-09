@@ -176,26 +176,26 @@ When a signer submits a `SUPERCEDE` node (`Rk`), policy evaluates `asserted_para
 
 ## Chained Escalation Challenge Format
 
-When the next approver opens an intent at `head_node_hash = Hk`, the RS mints an ICO with the same `intent_id`, a new `challenge_id`, a `prior_chain` claim holding `[R0, ..., Rk]`, and the parameter changes in `display_facts`.
+When the next approver opens an intent at `head_node_hash = Hk`, the RS mints an ICO with the same `intent_id`, a new `challenge_id`, a `prior_chain` claim holding `[R0, ..., Rk]`, a `prior_signers` claim listing the RS-verified `seq`, `sub`, `decision`, `assurance_tier`, and `admitted_at` for each prior attestation node (`1 ... k`), and the parameter changes in `display_facts`. `admitted_at` is the time (NumericDate) at which the RS verified and admitted that node. The escalation ICO is therefore the RS's signed receipt for the nodes it lists (Section 6, step 2).
 
 The approver's Signing Vault MUST verify the ICO signature and show:
 1. the original proposal (`R0`);
 2. each `SUPERCEDE` change, diff, and justification (`R1 ... Rk`); and
-3. who signed each prior node,
+3. who signed each prior node (`prior_signers`),
 
 before asking the approver to sign `R_(k+1)` (`APPROVE` or `SUPERCEDE` targeting `Hk`).
 
-The vault relies on the RS signature over `prior_chain` for prior signers' identities. It cannot verify Tier 2 or Tier 3 attestations itself, because that needs the RS enrollment records ({{POI-CORE}} Section 6.3.2, precondition 6).
+The vault relies on the RS signature over `prior_chain` and `prior_signers` for prior signers' identities. It cannot verify Tier 2 or Tier 3 attestations itself, because that needs the RS enrollment records ({{POI-CORE}} Section 6.3.2, precondition 6).
 
 ## Challenge Binding for Appended Nodes
 
 {{POI-CORE}} Section 6.3.2, precondition 4, requires each attestation to bind the challenge it answers. In a chain, that is the node's Node Challenge:
 
-* `R1` signed against the root challenge binds the challenge in `R0`.
-* A node appended in response to an escalation (Section 4.3) or step-up (Section 4.2, outcome 2) challenge MUST carry that ICO in its `challenge_jws` member. Its attestation MUST bind that ICO's `intent_id` and `challenge_id`, and the ICO's `intent_id` MUST equal `R0`'s.
-* The carried ICO's `prior_chain` MUST list exactly the preceding nodes, by `seq` and `node_hash`. This ties the challenge to the head it was minted for.
+* `R1` signed against the root challenge binds the challenge in `R0`, and MUST NOT carry a separate `challenge_jws` that differs from `R0.challenge_jws`.
+* A node appended in response to an escalation (Section 4.3) or step-up (Section 4.2, outcome 2) challenge MUST carry that ICO in its `challenge_jws` member. Its attestation MUST bind that ICO's `intent_id` and `challenge_id`, and the ICO's `intent_id` MUST equal `R0`'s. For the PSEA attestation profile ({{POI-CORE}} Section 6.3.3.2), a node that carries `challenge_jws` MUST compute `psea_stepup_selection` as `base64url(SHA-256(JCS({"challenge_id": "<node-challenge-id>", "decision": "<decision>", "target_node_hash": "<parent-node-hash>"})))` so the device signature commits to the node's `challenge_id`.
+* The carried ICO's `prior_chain` MUST match the preceding nodes by `seq`, `node_type`, parent link, `assurance_tier`, and `node_hash`, and its `prior_signers` (when present) MUST match the verified signers of `R1 ... R_(i-1)`. This ties the challenge to the exact lineage and head it was minted for.
 * Each node's challenge is covered by its `node_hash` ({{POI-CORE}} Section 6.1), so auditors can check it.
-* On admission, the RS consumes the appended node's `challenge_id` ({{POI-CORE}} Section 7.1, step 5) in the same atomic operation as the CAS (Section 5.5).
+* On admission, the RS consumes the appended node's `challenge_id` ({{POI-CORE}} Section 7.1, step 5) and stateful attestation identifiers in the same atomic operation as the CAS (Section 5.5).
 
 
 # Concurrent Approver Race Conditions (Linear Chain Compare-and-Swap)
@@ -241,7 +241,7 @@ t = 150ms: Approver 2 submits R1_B (SUPERCEDE H0 -> new params P1)
 1. **Single approver, already executed:** The RS MUST reject `R1_B` with `409` (`intent_already_finalized`) and return `[R0, R1_A]` and the CIR.
 2. **Quorum still pending at `H1_A`:** The RS MUST reject `R1_B` with `409` (`stale_head_conflict`) and return `[R0, R1_A]`.
    * Approver 2's vault reports that Approver 1 approved `R0`, keeps Approver 2's edits, and asks Approver 2 to sign against `H1_A` under a new challenge (Section 4.4).
-   * The result, `R0 -> R1_A (APPROVE H0) -> R2 (SUPERCEDE H1_A)`, records that Approver 1 approved `R0` and Approver 2 then replaced the parameters. Approver 1's approval no longer counts toward the quorum for the new parameters (Section 6, step 4).
+   * The result, `R0 -> R1_A (APPROVE H0) -> R2 (SUPERCEDE H1_A)`, records that Approver 1 approved `R0` and Approver 2 then replaced the parameters. Approver 1's approval no longer counts toward the quorum for the new parameters (Section 6, step 5).
 
 ## Atomicity and Durability of Chain State
 
@@ -255,20 +255,21 @@ This state follows {{POI-CORE}} Section 7.1, step 5: it MUST survive restarts, M
 To verify a chained PoIE (`chain[0 ... n]`, `n >= 1`), a verifier MUST:
 
 1. **Bound the chain:** Before any cryptography, check `2 <= length(chain) <= MAX_CHAIN_LENGTH` (RECOMMENDED default `16`). Otherwise fail with `400` (`malformed_poi_envelope`).
-2. **Verify `R0`:** Run {{POI-CORE}} Section 7.1 step 1 on `chain[0].challenge_jws`, including the issuer check, and confirm `chain[0].node_hash == H0`.
-3. **Verify each node `i = 1 ... n`:**
+2. **Fix evaluation times:** An approval is judged at the time the RS received and admitted it, not at the time a later node is appended. For `n >= 2`, verify the head node's challenge (`chain[n].challenge_jws`) at the current time as in {{POI-CORE}} Section 7.1 step 1, and take `t_eval(i)` for each `i = 1 ... n-1` from the `admitted_at` of its `prior_signers` entry. `prior_signers` MUST list every node `1 ... n-1` with an `admitted_at` that does not decrease along the chain and is not later than the current time (beyond skew); otherwise fail with `400` (`malformed_poi_envelope`). `t_eval(n)` is the current time (or `cir.received_at` for audit). A verifier that is given no `admitted_at` values MUST evaluate every node at the current time.
+3. **Verify `R0`:** Run {{POI-CORE}} Section 7.1 step 1 on `chain[0].challenge_jws` with `t_eval(1)`, the time the node that answered it was admitted, including the issuer check, and confirm `chain[0].node_hash == H0`.
+4. **Verify each node `i = 1 ... n`:**
    * `chain[i].seq == i`.
    * The parent reference (`target_node_hash` or `supercedes_node_hash`) equals `chain[i-1].node_hash`.
-   * The Node Challenge is `chain[i].challenge_jws` if present; otherwise the root challenge, allowed only for `i == 1`. Verify a carried challenge as in {{POI-CORE}} Section 7.1 step 1 at the time it was answered (at ingestion, now), check that its `intent_id` equals the root's, and check that its `prior_chain` matches `chain[0 ... i-1]` (Section 4.4).
+   * The Node Challenge is `chain[i].challenge_jws` if present; otherwise the root challenge, allowed only for `i == 1`. Verify a carried challenge as in {{POI-CORE}} Section 7.1 step 1 at `t_eval(i)`, check that its `intent_id` equals the root's, and check that its `prior_chain` matches `chain[0 ... i-1]` (Section 4.4).
    * A `REJECT` at `i < n` fails with `chain_continuity_broken`: a `REJECT` node is terminal and MUST NOT have child nodes.
    * For `SUPERCEDE`, `SHA-256(JCS(asserted_params))` over the parsed JSON equals `asserted_params_hash`.
-   * Verify the attestation as in {{POI-CORE}} Section 7.1 step 3, using the Node Challenge in place of the root challenge: audience, intent and challenge binding, decision, and tier from evidence. For `APPROVE`, the committed parameters are those in effect at the parent (the nearest preceding `asserted_params`, or `R0.raw_params`).
+   * Verify the attestation as in {{POI-CORE}} Section 7.1 step 3, using the Node Challenge in place of the root challenge and `t_eval(i)` in place of the current time (KCT window, PSEA lifetime): audience, intent and challenge binding, decision, and tier from evidence. For `APPROVE`, the committed parameters are those in effect at the parent (the nearest preceding `asserted_params`, or `R0.raw_params`).
    * `chain[i].node_hash` equals the hash computed per {{POI-CORE}} Section 6.1.
-4. **Effective parameters and signers:**
+5. **Effective parameters and signers:**
    * Let `k_last_supercede` be the largest `k` (`1 <= k <= n`) with `chain[k].node_type == "SUPERCEDE"`, or `0` if none.
    * The effective parameters are `chain[k_last_supercede].asserted_params`, or `R0.raw_params` when `k_last_supercede == 0`.
    * **Quorum:** An `APPROVE` at `j < k_last_supercede` approved parameters that were later replaced. Policy MUST count only signers at `i >= k_last_supercede` toward quorum or escalation authority.
-5. **Admit the appended node (RS only):** Apply the CAS (Section 5.1) and consume the node's challenge and attestation identifiers in one atomic operation (Section 5.5). Auditors run steps 1 to 4 only.
+6. **Admit the appended node (RS only):** Apply the CAS (Section 5.1) and consume the node's challenge and attestation identifiers in one atomic operation (Section 5.5). Record the admission time; it becomes the node's `admitted_at` in the next escalation ICO and in the CIR. Auditors run steps 1 to 5 only.
 
 
 # Chained State and Concurrency Error Modes
@@ -333,7 +334,7 @@ For asynchronous review, the RS MUST NOT mint long-lived challenges at proposal 
 
 An intermediary could try to drop `R1` or alter the first signer's justification before the next approver (`R2`) sees it. Each `Hk` covers the whole node, including its attestation, decision, parent hash, and any carried challenge ({{POI-CORE}} Section 6.1), and the escalation ICO signs `prior_chain: [R0, R1]`. Any change breaks both the hash chain and the RS signature.
 
-Verifiers MUST NOT count `APPROVE` signatures at `j < k_last_supercede` toward quorum for parameters replaced at `k_last_supercede` (Section 6, step 4). Otherwise an approval of `R0` would count as approval of the replacement.
+Verifiers MUST NOT count `APPROVE` signatures at `j < k_last_supercede` toward quorum for parameters replaced at `k_last_supercede` (Section 6, step 5). Otherwise an approval of `R0` would count as approval of the replacement.
 
 ## Replay of Escalation and Step-Up Approvals
 
@@ -365,6 +366,7 @@ This document registers in the "JSON Web Token Claims" registry ({{RFC7519}}):
 
 * `context_state_hash`: Digest of the RS domain state when the challenge was issued (Section 3.2).
 * `prior_chain`: Verified predecessor nodes in an escalation challenge (Section 4.3).
+* `prior_signers`: RS-verified signer subjects, decisions, and assurance tiers for `prior_chain` nodes (Section 4.3).
 * `current_head_node_hash`: The current head `node_hash`, returned with `stale_head_conflict` (Section 7.1).
 
 

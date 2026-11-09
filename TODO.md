@@ -124,7 +124,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 ### 2.4 New Items from the 2026-11-09 Review
 
 - [x] **Unsigned Scope Tokens** (fixed 2026-11-09, uncommitted): Collet now verifies the user-delegated token (`usertoken.go`): ES256 signature under `--user-token-pubkey`, exact `--user-token-issuer`, `aud` containing `--user-token-audience`, required `exp`, optional `nbf`. Scopes come only from signed `scope`/`scp` claims; raw scope strings and `alg=none` JWTs are rejected with `Unauthenticated`. Collet refuses to start when the spec sets `required-oidc-scopes` without a verifier. mandrel-go `VerifyJWS` now rejects a nil key instead of panicking.
-  - [ ] **Decided 2026-11-09: all-of.** A token must carry every scope listed in `identity.required-oidc-scopes`. Change `checkScopes` and its tests, update the Collet error message, and state the semantics in mandrel-spec `docs/extensions.md`.
+  - [x] **Decided 2026-11-09: all-of.** A token must carry every scope listed in `identity.required-oidc-scopes`. Change `checkScopes` and its tests, update the Collet error message, and state the semantics in mandrel-spec `docs/extensions.md`.
   - [ ] JWKS and RS256 support with key rotation (only a single ES256 PEM key today).
   - [ ] Validate the RFC 8693 `act` claim the spec says the exchanged token carries.
   - [ ] Document `--user-token-pubkey`, `--user-token-issuer`, `--user-token-audience` in mandrel-web (flag-drift CI).
@@ -133,10 +133,61 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 - [ ] **Release Plumbing** (release candidate done 2026-11-09): mandrel-go tagged `v1.1.0-rc.1` (`064baa3`) and Collet pins it (`7c01a2a`); standalone build, race tests and `podman build` pass. All five feature branches are pushed and carry the coordinated tag `poi-core-01-rc.1`. Remaining: follow the `CONTRIBUTING.md` landing order. Note: because `v1.1.0-rc.1` exists, semverbot will release mandrel-go as `v1.1.1` (patch) or `v1.2.0` (minor), not `v1.1.0`; delete the rc tag before merging if `v1.1.0` matters, then re-pin Collet to the released tag. The DPoP proto change must merge in mandrel-spec and mandrel-go back to back because of `proto-drift`.
   - [ ] Collet's `flag-drift` CI fails on the pushed branch until mandrel-web documents the five new flags.
 - [ ] **Receipt Propagation**: The CIR is stored in a Go `context.Value`, which gRPC does not transmit. Attach it to outgoing metadata and/or the response so the target and caller can see it.
-- [ ] **Receipt Semantics**: The CIR is minted before forwarding. Either document it as admission evidence only, or add a separate completion record after the target responds.
+- [x] **Receipt Semantics**: The CIR is minted before forwarding. Either document it as admission evidence only, or add a separate completion record after the target responds.
 - [ ] **Metadata Separation on SUPERCEDE**: Wholesale replacement drops non-executable keys (trace, tenant, routing). Split executable parameters from metadata, replace only the former, then compare exactly before forwarding.
-- [ ] **Unknown-Outcome Handling**: A target error after consumption burns the intent with no record beyond telemetry. Record the consumed/unknown state for reconciliation.
-- [ ] **Signature Malleability**: The DER parser ignores trailing bytes, and raw vs. DER re-encoding changes the node hash without invalidating the signature. Use strict parsing.
+- [x] **Unknown-Outcome Handling**: A target error after consumption burns the intent with no record beyond telemetry. Record the consumed/unknown state for reconciliation.
+- [x] **Signature Malleability**: The DER parser ignores trailing bytes, and raw vs. DER re-encoding changes the node hash without invalidating the signature. Use strict parsing.
+
+### 2.5 Second Adversarial Review (Post-rc.2) — Priority Queue
+
+Ordered by severity (Critical -> High -> Medium):
+
+- [x] **1. [Critical] Multi-Tier / Multi-Matrix Policy Evaluation & Action Binding** (`mandrel-collet/pkg/enforcement/layers.go`):
+  - Threshold tier evaluation loops over every matching tier in order (`50.00` then `500.00`), consuming the single `PoiEnvelope` on the lowest matching tier and failing on the next tier in the same matrix. Select the most restrictive matching tier per matrix (deny > highest required tier / min-approvals challenge > autonomous).
+  - Verify `ico.AuthorizationDetails.Type == attributeName` (via `poi.WithChallengeAction(attributeName)`) so an approval for one governed attribute cannot satisfy a challenge for another attribute.
+  - Ensure `IntentLayer` and `PolicyMatrixLayer` do not silently collide on the same `req.Identity.PoiEnvelope`.
+- [x] **2. [Critical] Atomic Head-Only Attestation Consumption & Multi-Hop Chain Replay Bug** (`mandrel-collet/pkg/enforcement/layers.go`, `ledger.go`, `redisstore.go`):
+  - `consumeAttestations(ctx, result.VerifiedSigners)` iterates over all signers (`seq: 1..n`) and runs before `IntentLedger.Admit`. In a multi-hop chain (`R0 -> R1 -> R2`), `R1`'s PSEA `jti` and PSEA/WebAuthn counter were already consumed when `[R0, R1]` was admitted as `PENDING`, so submitting `[R0, R1, R2]` always fails on `R1`!
+  - Only consume attestations for newly admitted nodes, and fold PSEA `jti` consumption and counter advancement into the atomic `IntentLedger.Admit` operation (both in-memory and Redis Lua script) so failed/stale admissions never burn hardware counters or PSEA tokens.
+- [x] **3. [High] PSEA Appended Node (`seq >= 2`) Challenge Binding** (`mandrel-go/pkg/poi/psea.go`, `attestations.go`, `draft-williams-oauth-poi-chained-state-01.md`):
+  - At `seq >= 2`, `eat_nonce` and `psea_stepup_selection` bind only `prev.NodeHash` (`H_{i-1}`), leaving `node[i].ChallengeJWS` (`nodeICO.ChallengeID`) cryptographically unbound by the PSEA signature.
+  - Bind the node challenge into PSEA tokens when `node.ChallengeJWS` is present (e.g., include `challenge_id` in `psea_stepup_selection` or derive `eat_nonce` from both `prev.NodeHash` and `node.ChallengeJWS` when an explicit node challenge is carried), and update `draft-williams-oauth-poi-chained-state-01.md` to match.
+- [x] **4. [High] `SUPERCEDE` Occurrence Key Stability & `MemoryIntentLedger` Leak** (`mandrel-collet/pkg/enforcement/layers.go`, `ledger.go`):
+  - Track the occurrence mapping across parameter replacements so retries/reapprovals after a `SUPERCEDE` resolve to the same `intent_id`.
+  - Namespace `MemoryIntentLedger.occurrenceOf` by `scopedIntent(namespace, intentID)` and clean up `occurrenceOf` on completion.
+- [x] **5. [High] `UserTokenVerifier` JWT `typ` Validation, Subject Extraction, and `all-of` Scopes** (`mandrel-collet/pkg/enforcement/usertoken.go`, `layers.go`):
+  - Reject KCTs (`poi+jwt;kind=kct`) or PoI artifacts re-presented as user access tokens by checking `typ` (accepting `JWT`, `at+jwt`, or empty, and rejecting `poi+jwt*`).
+  - Enforce `all-of` scope semantics in `checkScopes` (per 2.4 decision) and expose verified `Sub` so `ScopeLayer` / `PolicyMatrixLayer` can enforce subject continuity in synchronous single-approver flows.
+- [x] **6. [High] Tier 1 KCT Audience (`kcert.aud`), Issuer (`kcert.iss`), Non-Empty `sub`, and `auth_time` (`max_age`) Verification** (`mandrel-go/pkg/poi/attestations.go`, `types.go`, `verifier.go`):
+  - Support RFC 7519 string-or-array `aud` on `KeyCertificationTokenClaims` and enforce that when `kcert.aud` is non-empty, `ico.iss` is in `kcert.aud` (`ErrAudienceMismatch`).
+  - Reject empty `kcert.sub` and empty `kcert.iss` (`ErrMalformedEnvelope` / `ErrInvalidKCTSignature`), add optional `WithTrustedIdPIssuer` and `WithMaxAuthAge` verifier options, and wire `ErrSessionMaxAgeExceeded` (`t_eval - kcert.auth_time > max_age`).
+- [x] **7. [High] Root vs. Per-Node Challenge Handling at `seq == 1` and All-Challenge Consumption** (`mandrel-go/pkg/poi/verifier.go`, `types.go`):
+  - Disallow `node[1].ChallengeJWS` when it conflicts with `R0.ChallengeJWS` unless `R0` is explicitly superseded by a step-up challenge, and expose all unconsumed challenge IDs in `VerificationResult` so no challenge in a chain can bypass consumption.
+- [x] **8. [Medium] Legacy Node Deprecation / Strict Container Hash & `prior_chain` Signer Attribution** (`mandrel-go/pkg/poi/canonical.go`, `types.go`, `verifier.go`, `layers.go`):
+  - Record verified signer `sub` and attained `assurance_tier` on `prior_chain` nodes (or validate container node hashes strictly) so Signing Vaults can display who signed prior Tier 2/3 nodes per Chained Draft Section 4.3.
+- [x] **9. [Medium] Canonical Low-S ECDSA & Strict ASN.1 DER Signature Parsing** (`mandrel-go/pkg/poi/signer.go`, `webauthn.go`):
+  - Reject high-S (`s > N/2`) ECDSA signatures in `VerifyJWS` and `verifyASN1OrRawP256`, normalize `SignJWS` to emit low-S (`s <= N/2`), and reject trailing bytes or non-minimal DER integers in `webauthn.go`.
+- [x] **10. [Medium] Multi-Node Chain Admission Semantics in `decideAdmission`** (`mandrel-collet/pkg/enforcement/ledger.go`, `redisstore.go`):
+  - Support both incremental hop-by-hop admission (`PENDING` head CAS) and complete multi-approver chains submitted in a single call when `st` is `IntentNone` or `IntentFailed` (consuming all carried challenges and attestations atomically).
+- [x] **11. [Medium] Redis Cluster `CROSSSLOT` Fix in `outcomeScript`** (`mandrel-collet/pkg/enforcement/redisstore.go`):
+  - Avoid deleting `occ` (which hashes to a different Redis Cluster slot and is not in `KEYS`) inside `outcomeScript`; return the `occurrence` key from `outcomeScript` and delete it via the client (or handle occurrence state via the intent state check).
+- [x] **12. [Medium] `IntentLayer` vs. `PolicyMatrixLayer` Envelope Isolation** (`mandrel-collet/pkg/enforcement/layers.go`):
+  - Ensure a PoI envelope is verified against the specific layer/attribute that issued the challenge and is not double-consumed across layers in the same request.
+
+### 2.6 Third Adversarial Review (2026-11-09) — Open Items
+
+Fixed in this pass (committed on the feature branches): plain-decimal thresholds (NaN and hex floats no longer skip a challenge), approvals evaluated at the Resource Server's attested `admitted_at` in chained envelopes, and `display_facts` covering every parameter. Details of the remaining findings are in the untracked `REVIEW.local.md`.
+
+- [ ] **Approval binds `context` only**: `task_payload` and the originating request are not bound by the approval. Needs a design decision (payload as a parameter, a separate digest, or documenting context as the only executable input).
+- [ ] **Pending quorum cannot be resumed** after the escalation challenge is lost or expires; needs mint-on-request and a stored chain.
+- [ ] **Denial after admission strands the intent**; the intent and matrix layers also cannot both challenge one request.
+- [ ] **`REJECT` is not recorded**; a rejected challenge can still be approved by another signer.
+- [ ] **Unknown-outcome block is escapable** through the agent-supplied turn ID, extra context keys, or the 24-hour occurrence expiry.
+- [ ] Reopen 2.5 items 1, 2, 4, 6, 9, 10 and 12: not implemented as checked.
+- [ ] Library ignores `ico.required_tier`; WebAuthn challenge is hashed over a re-serialized payload; escalation challenges grow about 2.3x per hop; approver authorization is thin; smaller items in `REVIEW.local.md`.
+- [ ] **Release:** Collet's standalone build fails against the `v1.1.0-rc.2` pin (it needs `VerifiedSigner.AdmittedAt` and `PriorSigners`). Cut a mandrel-go release candidate and re-pin before the next collaborator snapshot.
+- [ ] mandrel-spec `docs/extensions.md` (all-of scope semantics) is edited but uncommitted, awaiting approval per its AGENTS.md.
+- [ ] Rebuild the draft outputs (`make`) and run idnits: the core and chained-state `-01` sources changed after the last build.
 
 ---
 
@@ -156,6 +207,7 @@ Newest first. Record what was done, what was found, and what was decided.
 
 ### 2026-11-09
 
+- **Third adversarial review and fixes.** Reviewed the post-rc.2 tree; 19 findings, 14 reproduced with throwaway tests. Fixed three on `feat/poi-reference-impl`: plain-decimal threshold parsing, admission-time evaluation of chained nodes (chained-state Sections 4.3 and 6 updated), and complete `display_facts` (core Section 5.2 gains Coverage and Display safety). mandrel-go `e47fec3` and mandrel-collet `2525e13` pushed; no tags. `scripts/verify-poi.sh` with `DEMO=1` passes except the Collet standalone build, which waits on a mandrel-go release. Open findings are in 2.6.
 - **Published rc.2.** mandrel-go `v1.1.0-rc.2` on `5fd2bac`; Collet re-pinned (`87f17c5`); coordinated `poi-core-01-rc.2` on all five feature heads (spec `8e39e2d`, go `5fd2bac`, collet `87f17c5`, cli `9ff3d79`, demo `d346900`). Full verification, including all standalone builds and the podman demo, passed before publishing. Drafts' Implementation Status points at rc.2. The parent repository is not pushed.
 - **Implemented the draft -01 code follow-ups (uncommitted).** mandrel-go: attestation container, canonical node hashes, per-node challenges with `prior_chain`, decoded-digest PSEA comparison, `display_facts` validation. Collet: occurrence-stable intent IDs, an atomic intent ledger (memory and Redis) with outcome tracking and completion records, quorum escalation with CAS. Demo vault emits containers. Drafts updated (`intent_outcome_unknown`, detached mode optional, `prior_chain` rule, Implementation Status). Correction from the user: `editable_schema` is unimplemented, not deprecated; restored as optional.
 - **Chained-state -01 and a core node-hash definition (uncommitted).** Aligning the extension surfaced two protocol gaps: node hashes past `H0` were undefined, and escalation or step-up appends had no challenge to bind under core precondition 4. Both are now specified. Both drafts rebuild; idnits reports no warnings or errors.

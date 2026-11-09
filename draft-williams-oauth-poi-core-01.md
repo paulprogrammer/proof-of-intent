@@ -300,6 +300,8 @@ The body is an ICO: a JWS (`typ: "poi+jwt;kind=chal"`) signed by the RS.
     * `raw_params`: The executable parameters, as a JSON object.
     * `raw_params_hash`: The digest of `raw_params` (Section 5.3).
     * `display_facts`: What the person sees, resolved by the RS from `raw_params` (for example, account names instead of IDs). A JSON object with a `title` string and a `fields` array of `{label, value}` strings in display order. It MAY include `editable_schema`, a JSON object describing which `raw_params` the signer may change in a `SUPERCEDE` and within what bounds; the Signing Vault builds its edit form from it, and the RS MUST reject a `SUPERCEDE` whose `asserted_params` fall outside it. The Signing Vault MUST render the title and every field in order before signing, and MUST refuse to sign if `display_facts` does not conform.
+    * **Coverage:** Every member of `raw_params` is covered by `raw_params_hash` and reaches execution, so the RS MUST represent every member of `raw_params` in `fields`. It MUST NOT issue a challenge whose `raw_params` hold a member the signer is not shown; a parameter that should not be displayed does not belong in `raw_params`.
+    * **Display safety:** Labels and values often derive from input the proposing agent controls. The RS MUST NOT issue a challenge in which a label or value contains control or format characters (line breaks, bidirectional controls, zero-width characters), or in which two labels read the same.
 
 ## Canonical Parameter Hashing and Numeric Precision via RFC 8785 (JCS)
 
