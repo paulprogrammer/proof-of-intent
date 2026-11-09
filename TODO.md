@@ -41,7 +41,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 
 - [ ] **Stateless vs. Stateful Framing**: The abstract, Section 1.2 and the Section 7 title say "stateless" while 7.1 requires a consumed-challenge check. Reframe as stateless evidence verification plus stateful admission.
 - [ ] **Consumed-State Requirements (Section 7.1)**: Require consumed state to be durable across restart, shared across replicas, and retained for at least `exp + ClockSkewTolerance`.
-- [ ] **Replay Key Consistency**: The draft consumes `challenge_id`; the code consumes `intent_id`. Decide which, and say why.
+- [x] **Replay Key Consistency** (2026-11-09): Collet now consumes the verified `challenge_id`, matching draft Section 7.1. Business-occurrence idempotency across reapproval (a stable `intent_id`) remains the Section 9.4 rework and the completion-record work.
 - [ ] **CIR Alignment Claim (Section 7.2 item 4, line ~437)**: Drop "structural semantics ... align with" EP receipts, or scope it to "can be mapped to". Label matching is insufficient, and EP separates pre-execution approval evidence from terminal consumption evidence. The CIR is minted before forwarding.
 - [ ] **Wire Format Drift**: The `attestation: {format, token}` container (6.3.1, 7.1 step 3) is not implemented; the code still uses `assertion_jws` / `webauthn_proof`. Either update the code or document the legacy fields.
 - [ ] **IANA Registry Citation (line ~641)**: "Specification Required" cites RFC 8174; it should cite RFC 8126.
@@ -88,19 +88,19 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 ### 2.2a Follow-ups Created by the Tier 0 Fixes
 
 - [ ] **Standalone Build Broken Until Release**: `GOWORK=off go build` of Collet now fails to compile against the pinned mandrel-go v1.0.17. This is louder than before (it previously built and shipped the old verifier). Resolved by Release Plumbing in 2.4.
-- [ ] **Document `--poi-trust-store`**: Add the flag and file format to `content/docs/reference/collet.md` in mandrel-web, or the `flag-drift` CI check fails.
+- [ ] **Document new Collet flags in mandrel-web** (`content/docs/reference/collet.md`, or `flag-drift` CI fails): `--poi-trust-store` and its file format, `--user-token-pubkey`, `--user-token-issuer`, `--user-token-audience`, and `--replay-store`.
 - [ ] **Draft: Document `assertion_payload`** on Direct WebAuthn nodes (6.3.3.3) and the PSEA nonce/selection profile (6.3.3.2).
 - [ ] **Tier 1 Lineage Now Enforced**: Session-pop assertions must now match `seq` and `target_node_hash`/`supercedes_node_hash`, and REJECT must carry `decision: REJECT`. This is draft-conformant, but check mandrel-demo and Signing Vault clients for compatibility.
-- [ ] **Counter Store Durability**: `MemoryCounterTracker` has the same restart and replica limits as the replay tracker; include it in the durable store work.
+- [x] **Counter Store Durability** (2026-11-09): `RedisStore.Advance` performs the compare-and-advance in a Lua script; semantics are tested identical to `MemoryCounterTracker`.
 
 ### 2.3 Reopened
 
 - [ ] **Feature: Stateful Consume-Once Check** (reopened)
   - [x] Wrapped `VerifyEnvelope` with `TryConsume` on a namespaced in-memory tracker.
-  - [ ] Close the clock-skew replay window: tracker entries expire at `ico.Exp`, the verifier accepts until `ico.Exp + 60s`, and `TryConsume` overwrites expired entries. Retain until `exp + ClockSkewTolerance`.
-  - [ ] Provide a durable, shared tracker (e.g. Redis or SQL) and fail closed when none is configured outside dev mode. The in-memory store re-opens every consumed intent on restart or on a second replica.
-  - [ ] Fix `intent_id` minting (`intent-<turn>-<unix seconds>`): two challenges in one turn within one second collide and produce false `challenge_replayed` rejections. Use a random ID or key on `challenge_id`.
-  - [ ] Evaluate cross-namespace replay: trackers are per spec name, and the challenge `iss` is not checked against the enforcing spec.
+  - [x] Clock-skew replay window closed (2026-11-09): entries are retained until `exp + ClockSkewTolerance`, using the verified challenge `exp` (the unverified re-parse and its 5-minute default are gone). The mandrel-go verifier now requires `exp` and `challenge_id`. Regression test fails without the fix.
+  - [x] Durable shared store (2026-11-09): `--replay-store redis://...` (SET NX with TTL for consumption, Lua compare-and-advance for counters). A spec that issues challenges refuses to start without an explicit `--replay-store`; `memory` is allowed with a warning; Redis errors fail closed (`Unavailable`). Tested with miniredis, including a simulated restart.
+  - [x] Random 128-bit challenge and intent IDs (2026-11-09).
+  - [x] Challenge issuer enforced (2026-11-09): `poi.WithChallengeIssuer` rejects challenges minted for another Collet issuer sharing the signing key.
 - [ ] **Feature: PSEA Attestation Verifier Integration** (reopened)
   - [x] Unpacker for `typ: "psea-proof+jwt"` with signature, time and UV checks.
   - [ ] Binding and appraisal gaps: see Critical section.
@@ -114,8 +114,8 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
   - [x] SUPERCEDE parameter omission, CIR hash, in-flight tampering, replay (sequential, concurrent, TTL, namespaced).
   - [x] Ported the review PoCs as negative tests in `mandrel-go/pkg/poi/webauthn_test.go` and `psea_envelope_test.go`: WebAuthn REJECT relabel, PSEA cross-intent reuse, IdP-key fallback, PSEA SUPERCEDE.
   - [ ] Vector type mismatch test (lands with typed parameters).
-  - [ ] Review regression cases: restart between admission and completion, provider success with failed completion recording, wrong origin/RP ID/challenge on the real WebAuthn path, and explicit expected-tier enforcement.
-  - [ ] Replay inside the skew window (`ico.Exp < t <= ico.Exp + 60s`).
+  - [ ] Review regression cases: restart is covered (Redis store test). Still open: provider success with failed completion recording (needs completion records, item 21).
+  - [x] Replay inside the skew window (`TestReplay_InsideSkewWindow_Negative`).
   - [x] Override token with an arbitrary value must not bypass PoI.
 
 ### 2.4 New Items from the 2026-11-09 Review
@@ -127,7 +127,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
   - [ ] Document `--user-token-pubkey`, `--user-token-issuer`, `--user-token-audience` in mandrel-web (flag-drift CI).
 - [ ] **`enforce-dpop` Not Implemented**: The spec field defaults to `true` and mandrel-spec docs present it as a control, but Collet has no DPoP code. **Decided 2026-11-09: implement it** (RFC 9449 proof bound to the user token's `cnf.jkt`). Needs a design for carrying the DPoP proof over gRPC, since `CompoundIdentity` has no field for it today.
 
-- [ ] **Release Plumbing**: The Collet Dockerfile builds with `GOWORK=off`, and `mandrel-collet/go.mod` pins mandrel-go v1.0.17, so the shipped image lacks the PSEA and WebAuthn code. Follow the landing order in `CONTRIBUTING.md` Section 3: merge mandrel-spec, merge and tag mandrel-go, bump the Collet pin and confirm `podman build`, then mandrel-demo. The DPoP proto change must merge in mandrel-spec and mandrel-go back to back because of `proto-drift`.
+- [ ] **Release Plumbing** (release candidate done 2026-11-09): mandrel-go `feat/poi-reference-impl` pushed and tagged `v1.1.0-rc.1` (annotated, on `064baa3`); Collet pins it (`7c01a2a`), builds and passes race tests with `GOWORK=off`, and `podman build` of its Dockerfile succeeds (image exposes the new flags). Remaining: follow the `CONTRIBUTING.md` landing order (merge mandrel-spec, merge mandrel-go and tag `v1.1.0`, re-pin Collet to `v1.1.0`, merge mandrel-cli, Collet and mandrel-demo). The DPoP proto change must merge in mandrel-spec and mandrel-go back to back because of `proto-drift`.
 - [ ] **Receipt Propagation**: The CIR is stored in a Go `context.Value`, which gRPC does not transmit. Attach it to outgoing metadata and/or the response so the target and caller can see it.
 - [ ] **Receipt Semantics**: The CIR is minted before forwarding. Either document it as admission evidence only, or add a separate completion record after the target responds.
 - [ ] **Metadata Separation on SUPERCEDE**: Wholesale replacement drops non-executable keys (trace, tenant, routing). Split executable parameters from metadata, replace only the former, then compare exactly before forwarding.
@@ -153,6 +153,8 @@ Newest first. Record what was done, what was found, and what was decided.
 
 ### 2026-11-09
 
+- **Published mandrel-go `v1.1.0-rc.1`.** Pushed only the mandrel-go feature branch and tag; other feature branches remain local. Collet pinned to the tag and verified standalone and with `podman build`.
+- **Tier 1 admission fixes (uncommitted).** Skew-window replay, random IDs, `challenge_id` replay key, challenge issuer check, Redis replay and counter store with explicit `--replay-store`, and tests. Demo runs against a Redis container by default (`REPLAY_STORE=memory` opt-out) and passes 8/8 in both modes; fixed demo cleanup, which leaked containers in memory mode because podman aborts multi-name stop/rm on a missing name. Release plumbing (tag mandrel-go, bump Collet pin) awaits confirmation because it publishes.
 - **Re-signed the feature branches for DCO.** All five Mandrel repositories require `Signed-off-by` on every commit; 12 feature commits lacked it (8 from this session, plus mandrel-go `d7dd76e` and mandrel-collet `685f6b5`, `b96edbe`, `e870387` from earlier work). Rebased mandrel-go, mandrel-collet and mandrel-demo with `--signoff` on their existing bases (trees unchanged), then rewrote the parent's unpushed history so every submodule pointer and commit message references the re-signed commits. Pre-rewrite heads are kept as local `backup/pre-signoff` branches in those submodules and `backup/pre-signoff-main` here. The rule is recorded in the untracked `CLAUDE.local.md`.
 - **Added mandrel-cli as a submodule** (`feat/poi-reference-impl`, in `go.work`, in `scripts/verify-poi.sh` and `CONTRIBUTING.md`). Moved `ValidateActions` out of `spec.LoadSpec` into the Collet loader so the CLI keeps its structured diagnostics; `LoadSpec` only parses. Found and fixed a second fail-open: the CLI Rego generator treated unknown actions as autonomous.
 - **Removed `challenge-always`.** One action, `challenge`, now means a fresh Proof-of-Intent approval per request. Load-time validation in mandrel-go and runtime deny-by-default in Collet close a pre-existing fail-open where an unrecognized action (including typos) allowed the request. mandrel-go, Collet and mandrel-spec tests pass. Uncommitted; mandrel-spec needs approval and `-s`.
