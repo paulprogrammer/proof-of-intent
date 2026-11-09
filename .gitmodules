@@ -4,3 +4,9 @@
 [submodule "mandrel-go"]
 	path = mandrel-go
 	url = git@gitlab.com:the-mandrel-project/mandrel-go.git
+[submodule "mandrel-demo"]
+	path = mandrel-demo
+	url = git@gitlab.com:the-mandrel-project/mandrel-demo.git
+[submodule "mandrel-spec"]
+	path = mandrel-spec
+	url = git@gitlab.com:the-mandrel-project/mandrel-spec.git

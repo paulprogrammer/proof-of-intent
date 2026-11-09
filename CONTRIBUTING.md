@@ -77,7 +77,50 @@ For full details, see: https://www.ietf.org/about/note-well/
 
 ---
 
-## 3. Contact
+## 3. Reference Implementation Submodules
+
+The PoI reference implementation spans four Mandrel repositories. They
+are pinned here as Git submodules so that each draft revision maps to
+exact implementation commits for the Implementation Status section
+([RFC 7942](https://www.rfc-editor.org/rfc/rfc7942)).
+
+| Submodule        | Role in PoI                                                   |
+|------------------|---------------------------------------------------------------|
+| `mandrel-go`     | Verifier library (`pkg/poi`): envelopes, attestation profiles |
+| `mandrel-collet` | Enforcement proxy: challenge issuance, admission, replay      |
+| `mandrel-demo`   | Mock IdP, mock Signing Vault, end-to-end demo scripts         |
+| `mandrel-spec`   | Proto, policy schema, canonical test vectors                  |
+
+Rules:
+
+1. **Edit PoI feature work only in these submodules.** All PoI changes
+   to the four repositories are made in the submodule working trees
+   under this repository, on the `feat/poi-reference-impl` branch. Do
+   not make PoI changes in standalone clones of the same repositories
+   elsewhere on disk; those clones stay on `main` and receive PoI work
+   only through merge requests from `feat/poi-reference-impl`.
+2. **Never commit to `main` inside a submodule.** Use
+   `feat/poi-reference-impl` or a dedicated branch.
+3. **The parent repository may commit directly to `main`.** Record a
+   submodule pointer update here when a submodule commit becomes part
+   of the documented PoI implementation state.
+4. **Workspace builds differ from release builds.** `go.work` at the
+   repository root wires `mandrel-go`, `mandrel-collet`, and
+   `mandrel-demo` together (`mandrel-spec` is not a Go module).
+   Standalone builds (`GOWORK=off`, Docker, CI) resolve each module's
+   `go.mod` pin and do not see unreleased `mandrel-go` changes until a
+   tag is cut and the pin is bumped.
+
+Setup after cloning:
+
+```sh
+git clone --recurse-submodules git@github.com:paulprogrammer/proof-of-intent.git
+git submodule foreach 'git switch feat/poi-reference-impl || true'
+```
+
+---
+
+## 4. Contact
 
 * **Author:** Paul Charles Williams (`paul@barefootcoders.com`)
 * **Organization:** Barefoot Coders, LLC
