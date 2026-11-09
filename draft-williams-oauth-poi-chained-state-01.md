@@ -46,9 +46,9 @@ informative:
 
 --- abstract
 
-The Proof-of-Intent (PoI) Core Protocol (draft-williams-oauth-poi-core-01) specifies a two-node (`[R0, R1]`) cryptographic framework for verifying synchronous Human-in-the-Loop (HITL) approvals, rejections, and single-hop parameter modifications, with stateless verification of approval evidence and consume-once admission at the Resource Server. High-consequence enterprise workflows -- such as multi-tier loan underwriting, dual-control clinical orders, and asynchronous batch agent queues -- also require asynchronous review, hierarchical escalation when a human modification exceeds the first operator's organizational authority, and deterministic conflict resolution when multiple approvers act concurrently.
+The Proof-of-Intent (PoI) Core protocol (draft-williams-oauth-poi-core-01) covers one proposal and one human decision. Some workflows need more: review hours after the agent proposed, escalation when an edit exceeds the first approver's authority, and a rule for approvers acting at the same time.
 
-This document extends PoI Core to define: (1) an asynchronous operating mode separating Intent Escrowing from Just-in-Time Challenge Minting to eliminate Time-of-Check to Time-of-Use (TOCTOU) state drift; (2) multi-hop hash-linked assertion chains (R0 -> R1 -> ... -> Rn) supporting hierarchical SUPERCEDE escalations and multi-party co-signatures, with each appended node bound to the challenge it answers; (3) a Linear Chain Compare-and-Swap (CAS) concurrency model on head_node_hash that resolves races between competing approvers without ambiguous tree forks, performed atomically with challenge consumption; and (4) extended verification rules (including bounded chain length DoS protection) and concurrency error codes.
+This document extends PoI Core with: (1) escrow at proposal time and short-lived challenges minted at review time, to avoid stale state; (2) hash-linked chains (R0 -> R1 -> ... -> Rn) for escalation and co-signing, with each appended node bound to its own challenge; (3) a compare-and-swap on the chain head, performed atomically with challenge consumption, so competing approvals cannot fork the chain; and (4) chain verification rules, a chain length limit, and concurrency error codes.
 
 --- middle
 
@@ -56,17 +56,17 @@ This document extends PoI Core to define: (1) an asynchronous operating mode sep
 
 ## Motivation for Stateful and Multi-Hop PoI Workflows
 
-{{POI-CORE}} defines the two-node (`[R0, R1]`) Proof-of-Intent protocol, which satisfies synchronous, single-approver Human-in-the-Loop (HITL) interactions. Complex enterprise deployments introduce three additional requirements that exceed the two-node model:
+{{POI-CORE}} handles one approver deciding synchronously. Three cases need more:
 
-1. **Asynchronous Approval Queues:** An autonomous agent may prepare a batch of proposed actions (e.g., loan underwriting packages or clinical refill orders) hours before a human reviewer logs in. Issuing a long-lived challenge at proposal time exposes the system to Time-of-Check to Time-of-Use (TOCTOU) data drift.
-2. **Hierarchical Escalation of Human Modifications (`R0 -> R1 -> R2`):** When a human operator modifies parameters via a `SUPERCEDE` assertion (`R1`), the new parameters may exceed that operator's organizational authority limit, requiring escalation to a next-line approver (`R2`) who must review both the original agent proposal (`R0`) and the first operator's signed adjustment and justification (`R1`).
-3. **Concurrent Approver Race Conditions:** Multiple authorized approvers may inspect a queued intent simultaneously and submit competing transitions against the same parent node (e.g., Approver 1 submits `APPROVE H0` while Approver 2 submits `SUPERCEDE H0`).
+1. **Asynchronous queues:** An agent may prepare actions (loan packages, refill orders) hours before a reviewer logs in. A challenge minted at proposal time would sign state that may have changed by review time.
+2. **Escalation (`R0 -> R1 -> R2`):** A `SUPERCEDE` (`R1`) may exceed the signer's authority. The next approver (`R2`) needs to see both the agent proposal (`R0`) and the first signer's change and justification (`R1`).
+3. **Concurrent approvers:** Two approvers may act on the same node at once (one sends `APPROVE H0`, the other `SUPERCEDE H0`).
 
 ## Relationship to PoI Core and Orthogonality
 
-This document normatively extends {{POI-CORE}}. The following specifications from {{POI-CORE}} apply unchanged: Ephemeral Intent Keys and Key Certification Tokens (`application/poi+jwt;kind=kct`), PoP Key Chaining Rotation (`application/poi+jwt;kind=roll`), JCS canonical hashing ({{RFC8785}}) and node hash computation (Section 6.1), the attestation container, tier ordering, six-precondition conformance contract, and attestation profiles (Section 6.3), consume-once admission (Section 7.1, step 5), the Countersigned Intent Receipt (`application/poi+jwt;kind=rcpt`, Section 7.2), and the recovery rules for unknown outcomes (Section 9.4).
+This document extends {{POI-CORE}}. These parts of {{POI-CORE}} apply unchanged: EIKs and KCTs (`application/poi+jwt;kind=kct`), key rotation (`application/poi+jwt;kind=roll`), JCS hashing ({{RFC8785}}) and node hashes (Section 6.1), the attestation container, tier ordering, preconditions, and profiles (Section 6.3), consume-once admission (Section 7.1, step 5), the CIR (`application/poi+jwt;kind=rcpt`, Section 7.2), and recovery from unknown outcomes (Section 9.4).
 
-Consistent with {{POI-CORE}}, organizational policy rules (such as which dollar amount or medication class triggers escalation) and domain record locking strategies remain orthogonal to PoI cryptographic verification. A Resource Server implementing this extension is stateful by design: it holds escrowed chains, the current `head_node_hash` of each open intent, and the consumed-challenge record required by {{POI-CORE}}.
+As in {{POI-CORE}}, policy (which amounts or drug classes escalate) and record locking stay outside PoI. A Resource Server implementing this extension is stateful: it holds escrowed chains, the `head_node_hash` of each open intent, and the consumed-challenge record.
 
 
 # Conventions and Terminology
@@ -77,51 +77,51 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Terminology
 
-In addition to the terms defined in Section 2.2 of {{POI-CORE}}, this specification uses the following terms:
+Terms from Section 2.2 of {{POI-CORE}} apply. In addition:
 
-* **Escrowed Intent:** A proposed transaction (`R0`) or partially approved chain (`[R0, ..., Rk]`) persisted by a Resource Server in a non-terminal pending state awaiting asynchronous human review or next-line escalation.
-* **Head Node Hash (`head_node_hash`):** The `node_hash` (`Hk`) of the latest verified node (`seq: k`) in an Escrowed Intent's `chain` on the Resource Server.
-* **Linear Chain Compare-and-Swap (CAS):** The atomic state transition rule requiring any candidate node at `seq: k + 1` to reference the Resource Server's current `head_node_hash` (`Hk`) as its parent hash.
-* **Node Challenge:** The Intent Challenge Object (ICO) under which a given node was signed. For `R1` in a chain that has not been escalated, this is the root challenge in `R0`; for a node appended after an escalation or step-up, it is the challenge minted for that append (Section 4.4).
+* **Escrowed Intent:** A proposal (`R0`) or partial chain (`[R0, ..., Rk]`) held by the RS while it waits for review or escalation.
+* **Head Node Hash (`head_node_hash`):** The `node_hash` (`Hk`) of the latest accepted node (`seq: k`) of an escrowed intent.
+* **Linear Chain Compare-and-Swap (CAS):** The rule that a candidate node at `seq: k + 1` must name the current `head_node_hash` (`Hk`) as its parent.
+* **Node Challenge:** The ICO a node was signed under: the root challenge in `R0` for an un-escalated `R1`, or the challenge minted for that append (Section 4.4).
 
 
 # Asynchronous Operating Mode (Escrowing and Just-in-Time Minting)
 
 ## The Stale Challenge and TOCTOU Problem
 
-In asynchronous workflows, hours or days may elapse between when an AI agent proposes an action (`t0`) and when a human approver reviews it (`t1`). If the Resource Server mints a signed Intent Challenge Object (ICO) at `t0` with a multi-day expiration window:
-1. Underlying domain state (e.g., patient lab results, allergy records, or borrower credit flags) may change between `t0` and `t1` (TOCTOU drift).
-2. A long-lived challenge creates an unnecessarily wide replay and tampering window.
+Hours or days can pass between the proposal (`t0`) and the review (`t1`). A challenge minted at `t0` with a long expiry has two problems:
+1. The underlying records (lab results, allergies, credit flags) may change before `t1`.
+2. A long-lived challenge widens the replay window.
 
-To prevent TOCTOU drift while keeping cryptographic validity windows tight, Resource Servers supporting asynchronous HITL MUST split **Intent Escrowing** from **Just-in-Time Challenge Minting**.
+An RS that supports asynchronous review MUST separate escrow from challenge minting.
 
 ## Stage 1: Asynchronous Intent Escrowing
 
-At `t0` (when the autonomous agent invokes the Resource Server without an active human session):
-1. The Resource Server validates the proposed parameters, computes a snapshot digest of relevant domain state (`context_state_hash`), and stores the proposal in `PENDING_APPROVAL` state under a unique `intent_id`. The `intent_id` identifies the business occurrence and remains the same for the life of the escrowed intent, across every challenge minted for it ({{POI-CORE}} Section 5.2).
-2. The Resource Server returns HTTP `202 Accepted` (or `403 Forbidden` with `PoI-Challenge: error="intent_proof_required", intent_id="..."`) to the agent without minting a long-lived ICO.
+At `t0`, when the agent calls without a person present:
+1. The RS validates the parameters, computes a digest of the relevant domain state (`context_state_hash`), and stores the proposal as `PENDING_APPROVAL` under an `intent_id`. The `intent_id` names the business occurrence and stays the same for every challenge minted for it ({{POI-CORE}} Section 5.2).
+2. The RS returns `202 Accepted` (or `403 Forbidden` with `PoI-Challenge: error="intent_proof_required", intent_id="..."`) without minting a long-lived ICO.
 
 ## Stage 2: Just-in-Time Challenge Minting
 
-At `t1` (when an authorized human approver logs in with an active KCT and opens `intent_id` from their approval queue):
-1. The client requests the challenge for `intent_id` from the Resource Server.
-2. **State Freshness Evaluation:** The Resource Server verifies that the underlying domain state still matches `context_state_hash` (or re-computes `display_facts` against current state).
-3. The Resource Server mints a **fresh, short-lived ICO** (`typ: "poi+jwt;kind=chal"`, `nbf: t1`, `exp: t1 + 300s`) with a new `challenge_id`, bound to `intent_id` and `context_state_hash`. Each challenge minted for the intent is consumed at most once ({{POI-CORE}} Section 7.1, step 5).
+At `t1`, when a reviewer with an active KCT opens the intent:
+1. The client requests a challenge for the `intent_id`.
+2. The RS checks that domain state still matches `context_state_hash` (or recomputes `display_facts` from current state).
+3. The RS mints a short-lived ICO (`typ: "poi+jwt;kind=chal"`, `nbf: t1`, `exp: t1 + 300s`) with a new `challenge_id`, bound to the `intent_id` and `context_state_hash`. Each challenge is consumed at most once ({{POI-CORE}} Section 7.1, step 5).
 
 ## Stage 3: Synchronous Signing and Role Separation
 
-The approver reviews the freshly minted ICO inside the Signing Vault and signs `R1` with any attestation profile of {{POI-CORE}} Section 6.3.3 that satisfies the required tier.
+The reviewer signs `R1` in the Signing Vault with any {{POI-CORE}} Section 6.3.3 profile that meets the required tier.
 
-Because the ICO is minted at `t1` and signed under the approver's active credential at `t1`, this flow supports **role separation (dual control)**: the user or service account under which the AI agent proposed `R0` at `t0` MAY be distinct from the authorized human (`sub` of `R1`) who approves or supercedes `R0` at `t1`.
+Because the challenge is minted and signed at `t1`, the account the agent proposed under at `t0` MAY differ from the person (`sub` of `R1`) who approves or supercedes it. This supports dual control.
 
 
 # Multi-Hop Hash-Linked Chains (`R0 -> R1 -> ... -> Rn`)
 
 ## General `n`-Node Envelope Structure and Transport Sizing
 
-In the Chained State profile, a Proof-of-Intent Envelope (`application/poi-envelope+json`) carries an ordered `chain` of `n + 1` nodes (`seq: 0 ... n`, where `1 <= n < MAX_CHAIN_LENGTH`). Every attestation node uses the `attestation` container of {{POI-CORE}} Section 6.3.1, and every `node_hash` is computed as in {{POI-CORE}} Section 6.1.
+A chained PoIE (`application/poi-envelope+json`) has `n + 1` nodes (`seq: 0 ... n`, `1 <= n < MAX_CHAIN_LENGTH`). Every attestation node uses the {{POI-CORE}} Section 6.3.1 container, and every `node_hash` follows {{POI-CORE}} Section 6.1.
 
-Because multi-node chains (`n >= 2`) containing nested KCTs (compact JWS, {{RFC7515}}) and WebAuthn assertions can exceed the 4 KB to 8 KB HTTP header limit enforced by reverse proxies, implementations SHOULD transmit multi-node PoIEs in the HTTP request body (`Content-Type: application/poi-envelope+json`) rather than the `PoI-Envelope` HTTP header, or use detached mode for `R0` (omitting `challenge_jws` when the stateful Resource Server already holds `[R0, ..., R_(n-1)]` in escrow).
+Chains with `n >= 2` that carry KCTs (compact JWS, {{RFC7515}}) and WebAuthn assertions can exceed the 4 to 8 KB header limits of reverse proxies. Implementations SHOULD send them in the request body instead of the `PoI-Envelope` header, or use detached `R0` when the RS already holds `[R0, ..., R_(n-1)]` in escrow.
 
 ~~~json
 {
@@ -168,56 +168,52 @@ Because multi-node chains (`n >= 2`) containing nested KCTs (compact JWS, {{RFC7
 
 ## Three Outcomes of a `SUPERCEDE` Assertion
 
-When a human signer submits a `SUPERCEDE` node (`Rk`) asserting modified parameters (`asserted_params`), the Resource Server's orthogonal policy engine evaluates `asserted_params` and selects one of three deterministic transitions:
+When a signer submits a `SUPERCEDE` node (`Rk`), policy evaluates `asserted_params` and picks one outcome:
 
-1. **Outcome 1 -- Sufficient Authority and Assurance (Immediate Execution):**
-   * The signer of `Rk` possesses organizational authority for `asserted_params`, and `Rk` satisfies the required assurance tier for those parameters.
-   * The Resource Server admits `Rk` ({{POI-CORE}} Section 7.1, step 5), commits `asserted_params`, and issues a Countersigned Intent Receipt (`CIR`). The CIR records admission; the outcome of execution is governed by {{POI-CORE}} Section 9.4.
-2. **Outcome 2 -- Same Signer Has Authority, Higher Assurance Tier Required (Step-Up Challenge):**
-   * `asserted_params` is within the signer's organizational role authority, but the modified value crosses into a higher assurance requirement (for example, a physician modifies a prescription from a non-controlled drug at Tier 1 `session-pop` to a Schedule II controlled substance requiring Tier 3 `webauthn-hw`).
-   * The Resource Server returns HTTP `403 Forbidden` with `PoI-Challenge: error="insufficient_assurance_tier", required_tier="urn:ietf:params:oauth:poi:tier:webauthn-hw"`, and a step-up challenge for the append at the current head (Section 4.4) so the same signer can complete the higher-tier attestation. Because the appended node asserts parameters, its attestation MUST use a profile that commits to `asserted_params_hash`; {{POI-CORE}} Section 6.3.3.2 excludes PSEA for `SUPERCEDE`.
-3. **Outcome 3 -- Organizational Authority Exceeded (Chained Escalation):**
-   * `asserted_params` exceeds the signer's organizational policy limit (for example, a loan officer adjusts a loan from `"45000.00"` to `"60000.00"`, exceeding their `"50000.00"` underwriting limit).
-   * The Resource Server records `[R0, ..., Rk]` as `PENDING_ESCALATION` with `head_node_hash = Hk`, returns HTTP `202 Accepted` (or `403 Forbidden` with `poi_error: "authority_escalation_required"`), and routes the escalated intent to the next-line authority queue.
+1. **Authority and tier sufficient:** The RS admits `Rk` ({{POI-CORE}} Section 7.1, step 5), executes `asserted_params`, and issues a CIR. The CIR records admission; the execution outcome is handled by {{POI-CORE}} Section 9.4.
+2. **Authority sufficient, higher tier required:** The edit is within the signer's role but raises the required tier (for example, a prescription changed from a non-controlled drug at Tier 1 to a Schedule II drug at Tier 3). The RS returns `403` with `PoI-Challenge: error="insufficient_assurance_tier", required_tier="urn:ietf:params:oauth:poi:tier:webauthn-hw"` and a step-up challenge for the append at the current head (Section 4.4). The appended node asserts parameters, so its attestation MUST use a profile that commits to `asserted_params_hash`; {{POI-CORE}} Section 6.3.3.2 excludes PSEA for `SUPERCEDE`.
+3. **Authority exceeded:** The edit exceeds the signer's limit (for example, a loan raised from `"45000.00"` to `"60000.00"` against a `"50000.00"` limit). The RS records `[R0, ..., Rk]` as `PENDING_ESCALATION` with `head_node_hash = Hk`, returns `202` (or `403` with `poi_error: "authority_escalation_required"`), and routes the intent to the next approver.
 
 ## Chained Escalation Challenge Format
 
-When a next-line approver opens an escalated intent at `head_node_hash = Hk`, the Resource Server mints an ICO (`typ: "poi+jwt;kind=chal"`) with the same `intent_id`, a new `challenge_id`, a `prior_chain` claim containing the verified predecessor nodes `[R0, ..., Rk]`, and the computed parameter delta in `display_facts`.
+When the next approver opens an intent at `head_node_hash = Hk`, the RS mints an ICO with the same `intent_id`, a new `challenge_id`, a `prior_chain` claim holding `[R0, ..., Rk]`, and the parameter changes in `display_facts`.
 
-The next-line approver's Signing Vault MUST verify the Resource Server's ICO signature and render:
-1. The original proposal (`R0`),
-2. Each intermediate `SUPERCEDE` modification, diff, and human justification (`R1 ... Rk`), and
-3. The identity of each prior human signer, before prompting the next-line approver to sign Node `R_(k+1)` (`APPROVE` targeting `Hk`, or another `SUPERCEDE` targeting `Hk`).
+The approver's Signing Vault MUST verify the ICO signature and show:
+1. the original proposal (`R0`);
+2. each `SUPERCEDE` change, diff, and justification (`R1 ... Rk`); and
+3. who signed each prior node,
 
-The Signing Vault relies on the Resource Server's signature over `prior_chain` for the identities of prior signers. It cannot independently verify Tier 2 or Tier 3 attestations, because doing so requires the Resource Server's enrollment records ({{POI-CORE}} Section 6.3.2, precondition 6).
+before asking the approver to sign `R_(k+1)` (`APPROVE` or `SUPERCEDE` targeting `Hk`).
+
+The vault relies on the RS signature over `prior_chain` for prior signers' identities. It cannot verify Tier 2 or Tier 3 attestations itself, because that needs the RS enrollment records ({{POI-CORE}} Section 6.3.2, precondition 6).
 
 ## Challenge Binding for Appended Nodes
 
-{{POI-CORE}} Section 6.3.2, precondition 4, requires each attestation to bind the `intent_id` and `challenge_id` of the challenge it answers. In a chain, that challenge is the node's Node Challenge:
+{{POI-CORE}} Section 6.3.2, precondition 4, requires each attestation to bind the challenge it answers. In a chain, that is the node's Node Challenge:
 
-* `R1`, when signed directly against the root challenge, binds the challenge in `R0`.
-* A node appended in response to an escalation challenge (Section 4.3) or a step-up challenge (Section 4.2, Outcome 2) MUST carry that ICO in a `challenge_jws` member of the node. Its attestation MUST bind that ICO's `intent_id` and `challenge_id`, and the ICO's `intent_id` MUST equal `R0`'s.
-* The carried ICO's `prior_chain` MUST list exactly the nodes that precede the appended node, by `seq` and `node_hash`. This ties each challenge to the head it was minted for, so a challenge cannot be attached to a different head.
-* Because the node object is covered by its `node_hash` ({{POI-CORE}} Section 6.1), each node's challenge is part of the hash chain and is available to offline auditors.
-* At admission, the Resource Server consumes the `challenge_id` of the appended node's challenge ({{POI-CORE}} Section 7.1, step 5) in the same atomic operation as the CAS (Section 5.5).
+* `R1` signed against the root challenge binds the challenge in `R0`.
+* A node appended in response to an escalation (Section 4.3) or step-up (Section 4.2, outcome 2) challenge MUST carry that ICO in its `challenge_jws` member. Its attestation MUST bind that ICO's `intent_id` and `challenge_id`, and the ICO's `intent_id` MUST equal `R0`'s.
+* The carried ICO's `prior_chain` MUST list exactly the preceding nodes, by `seq` and `node_hash`. This ties the challenge to the head it was minted for.
+* Each node's challenge is covered by its `node_hash` ({{POI-CORE}} Section 6.1), so auditors can check it.
+* On admission, the RS consumes the appended node's `challenge_id` ({{POI-CORE}} Section 7.1, step 5) in the same atomic operation as the CAS (Section 5.5).
 
 
 # Concurrent Approver Race Conditions (Linear Chain Compare-and-Swap)
 
 ## Linear Chain CAS Invariant on `head_node_hash`
 
-In multi-operator environments, two authorized approvers (Approver 1 and Approver 2) may concurrently inspect a pending intent at `head_node_hash = Hk` (`seq: k`) and submit competing transitions for `seq: k + 1` -- for example, Approver 1 submits `R_(k+1)_A` (`APPROVE` targeting `Hk`) while Approver 2 submits `R_(k+1)_B` (`SUPERCEDE` targeting `Hk`).
+Two approvers may both see an intent at `head_node_hash = Hk` and submit competing nodes for `seq: k + 1` (for example, `R_(k+1)_A` approves `Hk` while `R_(k+1)_B` supercedes it).
 
-To prevent ambiguous forked trees and ensure a single linear audit history, Resource Servers MUST enforce an atomic **Linear Chain Compare-and-Swap (CAS) Invariant**:
+To keep one linear history, the RS MUST enforce:
 
-* A Resource Server MUST only accept and append a candidate node at `seq: k + 1` if:
-  1. Its parent hash reference (`target_node_hash` or `supercedes_node_hash`) is byte-identical to the Resource Server's current `head_node_hash` (`Hk` at `seq: k`), AND
-  2. The intent has not already reached a terminal state (`COMMITTED` or `REJECTED`).
-* Upon accepting `R_(k+1)`, the Resource Server atomically updates `head_node_hash` from `Hk` to `H_(k+1)`.
+* A node at `seq: k + 1` is accepted only if:
+  1. its parent reference (`target_node_hash` or `supercedes_node_hash`) equals the current `head_node_hash` (`Hk`), and
+  2. the intent is not terminal (`COMMITTED` or `REJECTED`).
+* On acceptance, `head_node_hash` atomically moves from `Hk` to `H_(k+1)`.
 
 ## Prohibition on Silent Rebase
 
-Intermediary agents, orchestrators, and Resource Servers MUST NOT rewrite a losing assertion's parent hash reference from `Hk` to `H_(k+1)` in flight. Every conforming attestation commits to its parent node hash ({{POI-CORE}} Section 6.3.2, precondition 3), so rewriting the parent pointer invalidates the attestation and violates What You See Is What You Sign (WYSIWYS): the losing signer never reviewed the intervening transition `R_(k+1)`.
+Agents, orchestrators, and Resource Servers MUST NOT rewrite a losing node's parent from `Hk` to `H_(k+1)`. Every attestation commits to its parent ({{POI-CORE}} Section 6.3.2, precondition 3), so a rewrite breaks it, and the losing signer never saw `R_(k+1)`.
 
 ## Arrival Order 1: `SUPERCEDE` Arrives Before `APPROVE`
 
@@ -229,8 +225,8 @@ t = 150ms: Approver 1 submits R1_A (APPROVE H0)
            RS CAS FAILS: parent H0 != current head H1_B.
 ~~~
 
-1. If `R1_B` was within Approver 2's authority and executed immediately at `t = 100ms`, the Resource Server MUST reject Approver 1's `R1_A` with HTTP `409 Conflict` (`poi_error: "intent_already_finalized"`), returning the terminal `CIR`.
-2. If `R1_B` remains pending (e.g., awaiting co-signature or escalation), the Resource Server MUST reject `R1_A` with HTTP `409 Conflict` (`poi_error: "stale_head_conflict"`), returning the updated chain `[R0, R1_B]`. Approver 1's Signing Vault renders Approver 2's modification (`R1_B`) and justification so Approver 1 can consciously sign `R2` (`APPROVE H1_B`) under a new challenge if authorized.
+1. If `R1_B` executed at `t = 100ms`, the RS MUST reject `R1_A` with `409` (`intent_already_finalized`) and return the CIR.
+2. If `R1_B` is still pending (co-signature or escalation), the RS MUST reject `R1_A` with `409` (`stale_head_conflict`) and return `[R0, R1_B]`. Approver 1's vault shows `R1_B` and its justification, so Approver 1 can sign `R2` (`APPROVE H1_B`) under a new challenge.
 
 ## Arrival Order 2: `APPROVE` Arrives Before `SUPERCEDE`
 
@@ -242,58 +238,49 @@ t = 150ms: Approver 2 submits R1_B (SUPERCEDE H0 -> new params P1)
            RS CAS FAILS: parent H0 != current head H1_A.
 ~~~
 
-1. **Single-Approver Policy (Already Executed at `t = 100ms`):**
-   * If `R1_A` satisfied the Resource Server's policy and triggered immediate execution at `t = 100ms`, the Resource Server MUST reject Approver 2's `R1_B` with HTTP `409 Conflict` (`poi_error: "intent_already_finalized"`), returning `[R0, R1_A]` and the `CIR`.
-2. **Multi-Approver / Quorum Policy (Still Pending at `H1_A`):**
-   * If the intent requires multiple approvals (e.g., 2-of-2 quorum) and remains pending at `head_node_hash = H1_A` after Approver 1's signature, the Resource Server MUST reject Approver 2's `R1_B` with HTTP `409 Conflict` (`poi_error: "stale_head_conflict"`), returning `[R0, R1_A]`.
-   * Approver 2's Signing Vault alerts Approver 2 that Approver 1 approved `R0` (`H1_A`), preserves Approver 2's edited parameter values in the UI, and prompts Approver 2 to sign their modification against the new head `H1_A` under a new challenge (Section 4.4).
-   * The resulting linear chain `R0 -> R1_A (APPROVE H0) -> R2 (SUPERCEDE H1_A)` preserves exact chronological audit provenance: it proves Approver 1 approved `R0`, and Approver 2 subsequently superceded Approver 1's approval with new parameters `P1` (which invalidates Approver 1's prior approval of `R0` and requires quorum approval over `H2`).
+1. **Single approver, already executed:** The RS MUST reject `R1_B` with `409` (`intent_already_finalized`) and return `[R0, R1_A]` and the CIR.
+2. **Quorum still pending at `H1_A`:** The RS MUST reject `R1_B` with `409` (`stale_head_conflict`) and return `[R0, R1_A]`.
+   * Approver 2's vault reports that Approver 1 approved `R0`, keeps Approver 2's edits, and asks Approver 2 to sign against `H1_A` under a new challenge (Section 4.4).
+   * The result, `R0 -> R1_A (APPROVE H0) -> R2 (SUPERCEDE H1_A)`, records that Approver 1 approved `R0` and Approver 2 then replaced the parameters. Approver 1's approval no longer counts toward the quorum for the new parameters (Section 6, step 4).
 
 ## Atomicity and Durability of Chain State
 
-The `head_node_hash`, terminal state, and consumed-challenge record of an intent are one unit of state. The Resource Server MUST perform the CAS update, the consumption of the appended node's `challenge_id` (and any attestation token identifiers, such as a PSEA `jti`), and the terminal-state transition in a single atomic operation. Performing them separately lets a crash between them leave a consumed challenge without an advanced head, or an advanced head whose challenge can be presented again.
+The `head_node_hash`, terminal state, and consumed-challenge record of an intent are one unit. The RS MUST perform the CAS, the consumption of the appended node's `challenge_id` (and any attestation identifiers such as a PSEA `jti`), and the terminal transition as one atomic operation. Done separately, a crash between them can leave a consumed challenge without an advanced head, or an advanced head whose challenge can be presented again.
 
-This state is subject to the durability and sharing requirements of {{POI-CORE}} Section 7.1, step 5: it MUST survive a restart, MUST be shared by every instance that accepts envelopes for the intent, and its unavailability MUST cause envelopes to be rejected.
+This state follows {{POI-CORE}} Section 7.1, step 5: it MUST survive restarts, MUST be shared by every instance that accepts envelopes for the intent, and when it is unavailable envelopes MUST be rejected.
 
 
 # Extended Multi-Node Verification Algorithm
 
-A Resource Server or offline verifier validating a multi-node PoIE (`chain[0 ... n]`, where `n >= 1`) MUST execute the following steps:
+To verify a chained PoIE (`chain[0 ... n]`, `n >= 1`), a verifier MUST:
 
-1. **Enforce Bounded Chain Length (`MAX_CHAIN_LENGTH`):**
-   * Before performing any cryptographic operations, confirm `2 <= length(chain) <= MAX_CHAIN_LENGTH` (where the RECOMMENDED default for `MAX_CHAIN_LENGTH` is `16`). If `length(chain)` exceeds `MAX_CHAIN_LENGTH`, fail immediately with HTTP `400 Bad Request` (`malformed_poi_envelope`).
-2. **Validate Root Proposal (`R0`):**
-   * Execute Step 1 of Section 7.1 of {{POI-CORE}} to verify `chain[0].challenge_jws`, including the issuer check, and confirm `chain[0].node_hash == H0`.
-3. **Iterate Through Chain Nodes (`i = 1 ... n`):**
-   * Confirm `chain[i].seq == i`.
-   * Confirm `chain[i]`'s parent hash reference (`target_node_hash` for `APPROVE`/`REJECT`, or `supercedes_node_hash` for `SUPERCEDE`) equals `chain[i-1].node_hash` (`H_(i-1)`).
-   * Determine the Node Challenge: `chain[i].challenge_jws` if present, otherwise the root challenge (permitted only for `i == 1`). Verify a carried challenge as in Step 1 of Section 7.1 of {{POI-CORE}} at the time it was answered (at ingestion, the current time), confirm its `intent_id` equals the root challenge's `intent_id`, and confirm its `prior_chain` matches `chain[0 ... i-1]` (Section 4.4).
-   * If `chain[i].node_type == "REJECT"` and `i < n`, fail verification with `chain_continuity_broken` (a `REJECT` node is terminal and MUST NOT have child nodes).
-   * If `chain[i].node_type == "SUPERCEDE"`, recompute `SHA-256(JCS(asserted_params))` over the raw JSON tree and confirm it matches `asserted_params_hash`.
-   * Verify `chain[i]`'s attestation per Step 3 of Section 7.1 of {{POI-CORE}}, using the Node Challenge in place of the root challenge: audience, intent and challenge binding, decision commitment, and the tier derived from evidence. For an `APPROVE` node, the committed parameters are the effective parameters as of its parent (the `asserted_params` of the nearest preceding `SUPERCEDE`, or `R0.raw_params`).
-   * Confirm `chain[i].node_hash` equals the node hash computed as in {{POI-CORE}} Section 6.1.
-4. **Determine Effective Parameter State and Active Signers:**
-   * Let `k_last_supercede` be the largest index `k` (`1 <= k <= n`) where `chain[k].node_type == "SUPERCEDE"`, or `0` if no `SUPERCEDE` node exists in `chain`.
-   * The **effective parameters** of the chain are `chain[k_last_supercede].asserted_params` (if `k_last_supercede >= 1`) or `R0.raw_params` (if `k_last_supercede == 0`).
-   * **Quorum Rule:** Any `APPROVE` node at index `j < k_last_supercede` attested to parameters that were subsequently superceded at index `k_last_supercede`. When evaluating multi-approver quorum or escalation authority for the effective parameters, the policy engine MUST only count signers at indices `i >= k_last_supercede`.
-5. **Admit the Appended Node (Resource Server only):**
-   * Apply the CAS invariant (Section 5.1) and consume the appended node's challenge and attestation token identifiers in one atomic operation (Section 5.5). Offline auditors perform steps 1 through 4 only.
+1. **Bound the chain:** Before any cryptography, check `2 <= length(chain) <= MAX_CHAIN_LENGTH` (RECOMMENDED default `16`). Otherwise fail with `400` (`malformed_poi_envelope`).
+2. **Verify `R0`:** Run {{POI-CORE}} Section 7.1 step 1 on `chain[0].challenge_jws`, including the issuer check, and confirm `chain[0].node_hash == H0`.
+3. **Verify each node `i = 1 ... n`:**
+   * `chain[i].seq == i`.
+   * The parent reference (`target_node_hash` or `supercedes_node_hash`) equals `chain[i-1].node_hash`.
+   * The Node Challenge is `chain[i].challenge_jws` if present; otherwise the root challenge, allowed only for `i == 1`. Verify a carried challenge as in {{POI-CORE}} Section 7.1 step 1 at the time it was answered (at ingestion, now), check that its `intent_id` equals the root's, and check that its `prior_chain` matches `chain[0 ... i-1]` (Section 4.4).
+   * A `REJECT` at `i < n` fails with `chain_continuity_broken`: a `REJECT` node is terminal and MUST NOT have child nodes.
+   * For `SUPERCEDE`, `SHA-256(JCS(asserted_params))` over the parsed JSON equals `asserted_params_hash`.
+   * Verify the attestation as in {{POI-CORE}} Section 7.1 step 3, using the Node Challenge in place of the root challenge: audience, intent and challenge binding, decision, and tier from evidence. For `APPROVE`, the committed parameters are those in effect at the parent (the nearest preceding `asserted_params`, or `R0.raw_params`).
+   * `chain[i].node_hash` equals the hash computed per {{POI-CORE}} Section 6.1.
+4. **Effective parameters and signers:**
+   * Let `k_last_supercede` be the largest `k` (`1 <= k <= n`) with `chain[k].node_type == "SUPERCEDE"`, or `0` if none.
+   * The effective parameters are `chain[k_last_supercede].asserted_params`, or `R0.raw_params` when `k_last_supercede == 0`.
+   * **Quorum:** An `APPROVE` at `j < k_last_supercede` approved parameters that were later replaced. Policy MUST count only signers at `i >= k_last_supercede` toward quorum or escalation authority.
+5. **Admit the appended node (RS only):** Apply the CAS (Section 5.1) and consume the node's challenge and attestation identifiers in one atomic operation (Section 5.5). Auditors run steps 1 to 4 only.
 
 
 # Chained State and Concurrency Error Modes
 
 ## Escalation and Concurrency Error Definitions
 
-In addition to the 20 core error codes defined in Section 8 of {{POI-CORE}}, this extension defines four error codes for stateful, asynchronous, and multi-party workflows:
+In addition to the 20 error codes in Section 8 of {{POI-CORE}}, this extension defines four:
 
-* **`authority_escalation_required`** (HTTP `202 Accepted` or `403 Forbidden`):
-  * *Trigger:* A verified `SUPERCEDE` assertion (`Rk`) asserts parameters that exceed the signer's organizational policy limit (Section 4.2 Outcome 3). When queued asynchronously for next-line approval, the Resource Server SHOULD return `202 Accepted` with `"poi_status": "pending_escalation"`; when synchronous multi-party approval is required, the Resource Server MUST return `403 Forbidden` with `PoI-Challenge: error="authority_escalation_required"`.
-* **`stale_head_conflict`** (HTTP `409 Conflict`):
-  * *Trigger:* A candidate node at `seq: k + 1` failed the Linear Chain Compare-and-Swap check because a concurrent signer already advanced the Resource Server's `head_node_hash` for `intent_id` from `Hk` to `H_(k+1)` while the intent remains open (Section 5.1). The {{RFC9457}} problem details body MUST include `current_head_node_hash` and the updated `chain` array (`[R0, ..., R_(k+1)]`) so the client Signing Vault can render the intervening transition and prompt the user against `H_(k+1)`.
-* **`intent_already_finalized`** (HTTP `409 Conflict`):
-  * *Trigger:* A candidate node arrived after a concurrent signer's `APPROVE`, `REJECT`, or authoritative `SUPERCEDE` assertion already transitioned `intent_id` into a terminal executed or rejected state (`CIR` issued). The problem details body SHOULD include the terminal `CIR`.
-* **`context_state_drifted`** (HTTP `409 Conflict`):
-  * *Trigger:* In asynchronous flows (Section 3), the underlying domain record on the Resource Server changed between when the proposal or challenge was created (`context_state_hash`) and when the PoIE was submitted for execution (TOCTOU violation).
+* **`authority_escalation_required`** (`202` or `403`): A verified `SUPERCEDE` (`Rk`) exceeds the signer's limit (Section 4.2, outcome 3). For asynchronous escalation the RS SHOULD return `202` with `"poi_status": "pending_escalation"`; for synchronous multi-party approval it MUST return `403` with `PoI-Challenge: error="authority_escalation_required"`.
+* **`stale_head_conflict`** (`409`): A node at `seq: k + 1` failed the CAS because another signer already moved `head_node_hash` from `Hk` to `H_(k+1)` and the intent is still open (Section 5.1). The {{RFC9457}} body MUST include `current_head_node_hash` and the current `chain` (`[R0, ..., R_(k+1)]`) so the vault can show the new node and ask the signer to sign against `H_(k+1)`.
+* **`intent_already_finalized`** (`409`): The node arrived after another signer's `APPROVE`, `REJECT`, or authoritative `SUPERCEDE` made the intent terminal (CIR issued). The body SHOULD include that CIR.
+* **`context_state_drifted`** (`409`): In asynchronous flows (Section 3), the domain record changed between the proposal or challenge (`context_state_hash`) and submission.
 
 *Non-normative example of a `stale_head_conflict` Problem Details response:*
 
@@ -340,32 +327,32 @@ Content-Type: application/problem+json
 
 ## Time-of-Check to Time-of-Use (TOCTOU) Mitigation
 
-In asynchronous workflows, Resource Servers MUST NOT issue long-lived ICO challenges at proposal time (`t0`). Resource Servers MUST bind `context_state_hash` when minting the just-in-time ICO at review time (`t1`) and re-verify `context_state_hash` atomically when committing the terminal node of the PoIE.
+For asynchronous review, the RS MUST NOT mint long-lived challenges at proposal time (`t0`). It MUST bind `context_state_hash` in the challenge minted at review time (`t1`) and recheck it atomically when committing the terminal node.
 
 ## Lineage Integrity Across Escalation Hops
 
-In multi-party escalations (`R0 -> R1 -> R2`), a compromised intermediary orchestrator might attempt to strip `R1` or alter the first human's justification to influence the next-line approver (`R2`). Each `Hk` commits to the entire node object, including its attestation, decision, parent hash, and any carried challenge ({{POI-CORE}} Section 6.1), and the Resource Server's escalation ICO signs `prior_chain: [R0, R1]`. Tampering with an intermediate node therefore invalidates both the hash chain and the Resource Server's challenge signature.
+An intermediary could try to drop `R1` or alter the first signer's justification before the next approver (`R2`) sees it. Each `Hk` covers the whole node, including its attestation, decision, parent hash, and any carried challenge ({{POI-CORE}} Section 6.1), and the escalation ICO signs `prior_chain: [R0, R1]`. Any change breaks both the hash chain and the RS signature.
 
-Furthermore, per Step 4 of Section 6, verifiers MUST NOT count `APPROVE` signatures at indices `j < k_last_supercede` toward quorum requirements for parameters modified at `k_last_supercede`, preventing an attacker or confused policy engine from treating a prior approval of `R0` as an approval of modified parameters in `Rk`.
+Verifiers MUST NOT count `APPROVE` signatures at `j < k_last_supercede` toward quorum for parameters replaced at `k_last_supercede` (Section 6, step 4). Otherwise an approval of `R0` would count as approval of the replacement.
 
 ## Replay of Escalation and Step-Up Approvals
 
-Each append answers its own challenge (Section 4.4), and that challenge is consumed atomically with the CAS (Section 5.5). An intermediary that captures an appended node cannot present it again: its parent no longer equals the head, and its challenge is already consumed. A Resource Server that consumed challenges separately from the CAS, or kept either in process memory, would reopen this replay after a crash or at another instance.
+Each append answers its own challenge (Section 4.4), consumed atomically with the CAS (Section 5.5). A captured node cannot be replayed: its parent is no longer the head and its challenge is already consumed. Consuming challenges separately from the CAS, or holding either in process memory, reopens this replay after a crash or on another instance.
 
 ## Recovery Across Escalation
 
-The recovery rules of {{POI-CORE}} Section 9.4 apply to escrowed intents. Because `intent_id` is stable for the life of the escrowed intent, a Resource Server MUST NOT admit a further append for an intent whose admitted effect has an unknown outcome until that outcome is resolved, so an escalation or re-approval cannot reopen an occurrence that may already have executed.
+{{POI-CORE}} Section 9.4 applies to escrowed intents. Because `intent_id` is stable for the life of the intent, the RS MUST NOT admit another append while an earlier admission has an unknown outcome, so escalation or re-approval cannot reopen an action that may already have run.
 
 ## Denial-of-Service Mitigation via Bounded Chain Depth
 
-Because verifying each node in `chain` requires one or more asymmetric signature verifications (for example, a KCT and an assertion for Tier 1) and, for Tier 2 and Tier 3, an enrollment lookup, an unbounded `chain` array would allow a malicious client to cause CPU exhaustion by submitting thousands of self-superceding nodes in a single request. Verifiers MUST enforce `MAX_CHAIN_LENGTH` (Section 6 Step 1) prior to executing any cryptographic signature checks.
+Each node costs one or more signature verifications (for example, a KCT and an assertion at Tier 1) and, at Tier 2 and Tier 3, an enrollment lookup. Without a bound, a client could send thousands of nodes. Verifiers MUST enforce `MAX_CHAIN_LENGTH` (Section 6, step 1) before any signature check.
 
 
 # IANA Considerations
 
 ## PoI Error Code Registrations
 
-This document registers four additional error codes in the "Proof-of-Intent (PoI) Error Codes" registry (`urn:ietf:params:oauth:poi:error`) established in Section 11.3 of {{POI-CORE}}:
+This document adds four codes to the "Proof-of-Intent (PoI) Error Codes" registry (`urn:ietf:params:oauth:poi:error`) from Section 11.3 of {{POI-CORE}}:
 
 * `authority_escalation_required` (Section 7.1)
 * `stale_head_conflict` (Section 7.1)
@@ -374,22 +361,22 @@ This document registers four additional error codes in the "Proof-of-Intent (PoI
 
 ## JWT Claim Registrations
 
-This document registers the following claims in the IANA "JSON Web Token Claims" registry ({{RFC7519}}):
+This document registers in the "JSON Web Token Claims" registry ({{RFC7519}}):
 
-* `context_state_hash`: Digest of the Resource Server's underlying domain state at challenge issuance time (Section 3.2).
-* `prior_chain`: Ordered array of verified predecessor PoIE nodes included in an escalated Intent Challenge Object (Section 4.3).
-* `current_head_node_hash`: The `node_hash` of the current head node on the Resource Server returned in a `stale_head_conflict` error response (Section 7.1).
+* `context_state_hash`: Digest of the RS domain state when the challenge was issued (Section 3.2).
+* `prior_chain`: Verified predecessor nodes in an escalation challenge (Section 4.3).
+* `current_head_node_hash`: The current head `node_hash`, returned with `stale_head_conflict` (Section 7.1).
 
 
 # Implementation Status
 
 Note to RFC Editor: please remove this section and the reference to {{RFC7942}} before publication.
 
-This section records the status of known implementations of this extension at the time of posting, per {{RFC7942}}. Its inclusion does not imply endorsement by the IETF.
+This section records known implementations of this extension at the time of posting, per {{RFC7942}}. Listing does not imply IETF endorsement.
 
 * **Organization:** Barefoot Coders, LLC (Mandrel Project).
 * **Implementation:** The Mandrel reference implementation described in {{POI-CORE}}, Implementation Status, tag `poi-core-01-rc.2`.
-* **Coverage:** The verifier library (`mandrel-go`) accepts chains of up to 16 nodes and verifies sequence, parent linkage, each node's attestation against its Node Challenge, and carried challenges' `prior_chain` (Section 4.4); it treats any `REJECT` node as terminal (`intent_rejected`) and tracks effective parameters across `SUPERCEDE` nodes. The Resource Server component (`mandrel-collet`) implements multi-approver quorum (a policy `min-approvals` count of distinct signers at or after the last `SUPERCEDE`): an unmet quorum records the chain as pending and issues an escalation challenge carrying `prior_chain`, and appends are admitted through the Linear Chain CAS performed atomically with challenge consumption (Section 5.5) in a durable, shared store. It reports `stale_head_conflict`, `authority_escalation_required`, and `intent_already_finalized`.
-* **Known gaps:** Intent escrowing with a reviewer queue, just-in-time challenge minting on request, and `context_state_hash` are not implemented; they need a Resource Server that owns the domain records, which a gateway sidecar does not. Escalation on per-signer authority limits (Section 4.2, Outcome 3) and `context_state_drifted` are not implemented; quorum escalation uses the policy approval count only.
+* **Coverage:** `mandrel-go` verifies chains of up to 16 nodes: sequence, parent links, each node's attestation against its Node Challenge, and carried challenges' `prior_chain` (Section 4.4). It treats any `REJECT` as terminal (`intent_rejected`) and tracks effective parameters across `SUPERCEDE` nodes. `mandrel-collet` implements quorum from a policy `min-approvals` count of distinct signers at or after the last `SUPERCEDE`: an unmet quorum records the chain as pending and issues an escalation challenge with `prior_chain`, and appends are admitted through the CAS, atomically with challenge consumption, in a shared durable store. It returns `stale_head_conflict`, `authority_escalation_required`, and `intent_already_finalized`.
+* **Known gaps:** Reviewer-queue escrow, minting challenges on request, and `context_state_hash` are not implemented; they need an RS that owns the domain records, which a gateway sidecar does not. Escalation on per-signer authority limits (Section 4.2, outcome 3) and `context_state_drifted` are not implemented; quorum uses the policy approval count only.
 * **Maturity:** Prototype.
 * **Contact:** Paul Charles Williams (paul@barefootcoders.com).
