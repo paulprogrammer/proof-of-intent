@@ -65,12 +65,12 @@ informative:
     seriesinfo:
       Internet-Draft: draft-williams-oauth-poi-chained-state-00
   PSEA:
-    title: "Post-Session Execution Assurance (PSEA) Token Profile"
+    title: "PSEA Token Profile: An EAT Profile for Action-Bound, User-Verification-Gated Transaction-Confirmation Evidence"
     author:
       - ins: M. K. Yossif
         name: Mohamad Khalil Yossif
-        org: Yuthentic
-    date: 2026-02
+        org: Yuthent
+    date: 2026-10-08
     seriesinfo:
       Internet-Draft: draft-yossif-psea-03
     target: https://datatracker.ietf.org/doc/draft-yossif-psea/
@@ -80,18 +80,20 @@ informative:
       - ins: I. Schrock
         name: Iman Schrock
         org: EMILIA Protocol, Inc.
-    date: 2026
+    date: 2026-09-11
     seriesinfo:
       Internet-Draft: draft-schrock-ep-authorization-receipts-13
     target: https://datatracker.ietf.org/doc/draft-schrock-ep-authorization-receipts/
   RFC6755:
+  RFC7942:
+  RFC8126:
   RFC9943:
 
 --- abstract
 
 Autonomous software agents and orchestrated workflows increasingly invoke high-consequence operations on Resource Servers (such as financial originations or clinical prescriptions) on behalf of human users. Existing bearer tokens and transport-level Proof-of-Possession mechanisms cannot cryptographically distinguish between parameters autonomously synthesized by an intermediary agent and parameters explicitly reviewed, approved, or modified by an authorized human. Furthermore, redirect-based authorization flows impose prohibitive user experience friction for high-frequency Human-in-the-Loop (HITL) interactions.
 
-This document specifies the Proof-of-Intent (PoI) Core Protocol, a stateless, single-hop cryptographic framework building on JSON Web Signature (JWS, RFC 7515), Proof-of-Possession Key Semantics for JWTs (RFC 7800), JSON Web Token Best Current Practices (RFC 8725), JSON Canonicalization Scheme (JCS, RFC 8785), OAuth 2.0 Rich Authorization Requests (RAR, RFC 9396), OAuth 2.0 Step-Up Authentication Challenge Protocol (RFC 9470), and W3C WebAuthn. PoI Core defines: (1) short-lived, client-generated Ephemeral Intent Keys certified at login and rotated via Proof-of-Possession key chaining; (2) Resource Server-signed Intent Challenge Objects binding canonical action parameters to human-readable display facts; (3) multi-tier assurance attestations spanning zero-friction session keys to hardware security tokens; and (4) stateless verification and countersigned audit receipts for single-hop APPROVE, REJECT, and within-authority SUPERCEDE decisions.
+This document specifies the Proof-of-Intent (PoI) Core Protocol, a single-hop cryptographic framework building on JSON Web Signature (JWS, RFC 7515), Proof-of-Possession Key Semantics for JWTs (RFC 7800), JSON Web Token Best Current Practices (RFC 8725), JSON Canonicalization Scheme (JCS, RFC 8785), OAuth 2.0 Rich Authorization Requests (RAR, RFC 9396), OAuth 2.0 Step-Up Authentication Challenge Protocol (RFC 9470), and W3C WebAuthn. PoI Core defines: (1) short-lived, client-generated Ephemeral Intent Keys certified at login and rotated via Proof-of-Possession key chaining; (2) Resource Server-signed Intent Challenge Objects binding canonical action parameters to human-readable display facts; (3) multi-tier assurance attestations spanning zero-friction session keys to hardware security tokens; and (4) stateless verification of approval evidence, consume-once admission at the Resource Server, and countersigned audit receipts for single-hop APPROVE, REJECT, and within-authority SUPERCEDE decisions.
 
 Multi-hop chained escalations, asynchronous intent escrowing, and concurrent multi-approver conflict resolution are specified in the companion extension document, draft-williams-oauth-poi-chained-state-00.
 
@@ -111,7 +113,7 @@ This creates three immediate vulnerabilities for synchronous Human-in-the-Loop (
 
 ## Design Goals and Scope of PoI Core
 
-This document specifies **PoI Core**, the stateless foundation of the Proof-of-Intent protocol family. PoI Core is designed for Resource Servers that want to verify human intent over a proposed transaction (`[R0, R1]`) without maintaining multi-step workflow state tables:
+This document specifies **PoI Core**, the single-hop foundation of the Proof-of-Intent protocol family. PoI Core is designed for Resource Servers that want to verify human intent over a proposed transaction (`[R0, R1]`) without maintaining multi-step workflow state tables. Verifying the evidence in an envelope is stateless given trusted keys and, for Tier 2 and Tier 3, the signer's enrollment record. Admitting an envelope is stateful: the Resource Server records each challenge as consumed so that it authorizes at most one execution (Section 7.1).
 
 * **Zero Additional Cognitive Overhead at Baseline:** During session login, the client generates a non-extractable asymmetric keypair certified by the Authorization Server with `nbf` and `exp` bounds via {{RFC7800}}. Baseline (Tier 1) HITL approvals require only a single user interaction in the client interface with zero Authorization Server round-trips.
 * **Extensible Multi-Tier Assurance:** Resource Servers dynamically specify the required assurance tier based on action consequence -- stepping up from Tier 1 (Session PoP Key) to Tier 2 (Platform Biometric via {{WebAuthn}}) or Tier 3 (Cross-Platform Hardware Token via {{WebAuthn}}).
@@ -132,7 +134,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 * **Signing Vault:** A logically isolated client execution context (e.g., a cross-origin isolated iframe or native secure enclave) responsible for holding the EIK private handle, verifying Resource Server challenge signatures, rendering ground-truth display facts, and producing signed assertions.
 * **Intent Challenge Object (ICO):** A signed JWS ({{RFC7515}}) issued by a Resource Server when an action requires HITL authorization. The ICO binds the canonical hash of the proposed parameters, the resolved human-readable `display_facts`, and the required assurance tier.
 * **Proof-of-Intent Envelope (PoIE):** A JSON structure carrying an ordered, hash-linked array of nodes. In PoI Core, the envelope contains two nodes: the Resource Server's proposal (`R0`) and the human's terminal decision (`R1`: `APPROVE`, `REJECT`, or within-authority `SUPERCEDE`).
-* **Countersigned Intent Receipt (CIR):** A signed timestamped receipt produced by the Resource Server (or transparency service) upon verifying a PoIE within its active key window, enabling offline audit verification after the EIK has expired.
+* **Countersigned Intent Receipt (CIR):** A signed timestamped receipt produced by the Resource Server (or transparency service) upon admitting a PoIE within its active key window, enabling offline audit verification after the EIK has expired. A CIR is admission evidence, not evidence that the action executed (Section 7.2).
 
 ## Parameterized Media Type Conventions (`application/poi+jwt;kind=...`)
 
@@ -143,7 +145,7 @@ To enforce explicit JWT typing per {{RFC8725}} Section 3.11 without proliferatin
 | `kct` | `application/poi+jwt;kind=kct` | `"poi+jwt;kind=kct"` | Key Certification Token (Section 4.2) |
 | `roll` | `application/poi+jwt;kind=roll` | `"poi+jwt;kind=roll"` | PoP Key Rollover Request (Section 4.3) |
 | `chal` | `application/poi+jwt;kind=chal` | `"poi+jwt;kind=chal"` | Intent Challenge Object (Section 5.2) |
-| `assert` | `application/poi+jwt;kind=assert` | `"poi+jwt;kind=assert"` | Tier 1 Human Assertion JWS (Section 6.3.1) |
+| `assert` | `application/poi+jwt;kind=assert` | `"poi+jwt;kind=assert"` | Tier 1 Human Assertion JWS (Section 6.3.3.1) |
 | `rcpt` | `application/poi+jwt;kind=rcpt` | `"poi+jwt;kind=rcpt"` | Countersigned Intent Receipt (Section 7.2) |
 
 In accordance with {{RFC7515}} Section 4.1.9, senders SHOULD omit the `"application/"` prefix in the JWS `typ` header parameter (e.g., `"typ": "poi+jwt;kind=chal"`), and verifiers MUST treat `"poi+jwt;kind=<val>"` and `"application/poi+jwt;kind=<val>"` (case-insensitively with optional whitespace after `;`) as equivalent. Verifiers MUST reject any token whose `kind` parameter does not match the expected artifact type for that protocol step.
@@ -295,7 +297,7 @@ The response body is an Intent Challenge Object (ICO) -- a JWS (`typ: "poi+jwt;k
 * **ICO Payload Claims:**
   * `iss` (REQUIRED): Resource Server identifier URI.
   * `challenge_id` (REQUIRED): Cryptographically random unique identifier (nonce) for this challenge instance.
-  * `intent_id` (REQUIRED): Identifier of the logical transaction.
+  * `intent_id` (REQUIRED): Identifier of the logical transaction (the business occurrence). When the Resource Server issues a new challenge for the same occurrence (for example, after a challenge expires or during recovery), it MUST reuse the same `intent_id` and mint a new `challenge_id`. Section 9.4 relies on this identifier remaining stable across reapproval.
   * `iat`, `exp` (REQUIRED): Issuance and expiration timestamps of the challenge. `nbf` (OPTIONAL) defines the earliest activation time; when omitted, `iat` is the implicit activation time. Challenge validity lifetime (`exp - iat`) SHOULD NOT exceed 300 seconds (5 minutes).
   * `required_tier` (REQUIRED): URN specifying the minimum cryptographic assurance tier required by the Resource Server (Section 6.3).
   * `authorization_details` (REQUIRED): An object conforming to {{RFC9396}} Rich Authorization Requests, extended with the following mandatory PoI members:
@@ -303,7 +305,7 @@ The response body is an Intent Challenge Object (ICO) -- a JWS (`typ: "poi+jwt;k
     * `actor`: Identifier of the proposing agent or client.
     * `raw_params`: JSON object containing the machine-executable parameters proposed for the transaction.
     * `raw_params_hash`: SHA-256 digest of the canonicalized `raw_params` (Section 5.3).
-    * `display_facts`: Ground-truth, human-readable representation resolved by the Resource Server from `raw_params` (e.g., resolving opaque patient or account IDs into human-readable text). The `display_facts` member MAY be serialized as a single text string, an array of declarative strings, or a structured JSON map of localized labels and values. The Signing Vault MUST render all elements of `display_facts` faithfully to the user prior to signing.
+    * `display_facts`: Ground-truth, human-readable representation resolved by the Resource Server from `raw_params` (e.g., resolving opaque patient or account IDs into human-readable text). `display_facts` is a JSON object with a `title` string and a `fields` array of objects, each with a `label` string and a `value` string, in display order. It MAY include an `editable_schema` member: a JSON object describing which `raw_params` the signer may change in a `SUPERCEDE`, and within what bounds. The Signing Vault builds its edit form from `editable_schema`, and because the Resource Server signed it, the Resource Server MUST reject a `SUPERCEDE` whose `asserted_params` fall outside it. A single structure keeps rendering deterministic across Signing Vault implementations. The Signing Vault MUST render the title and every field, in order, before signing, and MUST refuse to sign if `display_facts` does not conform.
 
 ## Canonical Parameter Hashing and Numeric Precision via RFC 8785 (JCS)
 
@@ -311,7 +313,7 @@ Whenever a parameter object (`raw_params` or `asserted_params`) or assertion pay
 
 1. The JSON object MUST first be serialized into its canonical UTF-8 byte representation using the **JSON Canonicalization Scheme (JCS)** ({{RFC8785}}).
 2. A SHA-256 digest ({{RFC6234}}) MUST be computed over the canonical UTF-8 bytes.
-3. The digest MUST be formatted as `"sha256:"` followed by the lowercase hexadecimal or base64url encoding of the digest bytes.
+3. The digest MUST be formatted as `"sha256:"` followed by the lowercase hexadecimal encoding of the 32 digest bytes. Attestation profiles that carry the digest in another encoding (for example, base64 in {{PSEA}}) MUST be compared on the decoded 32-octet value.
 4. **Numeric Precision and Deserialization Interoperability:** To prevent IEEE 754 floating-point serialization discrepancies across polyglot runtimes (e.g., `500` vs. `500.0` or decimal rounding), fixed-precision quantities such as currency amounts, interest rates, and clinical dosages in `raw_params` and `asserted_params` SHOULD be represented as JSON strings (e.g., `"60000.00"`, `"6.25"`). Furthermore, verifiers MUST compute `SHA-256(JCS(...))` over the raw parsed JSON tree inside the JWS payload prior to unmarshaling into language-specific domain structs that might strip unknown or null fields.
 
 
@@ -321,9 +323,10 @@ Whenever a parameter object (`raw_params` or `asserted_params`) or assertion pay
 
 In PoI Core, a Proof-of-Intent Envelope (`Content-Type: application/poi-envelope+json`) contains a two-element `chain` array (`[R0, R1]`):
 
-* **Node 0 (`R0`, `PROPOSAL`):** Identifies the Resource Server's challenge. Its `node_hash` (`H0`) is `SHA-256(ASCII(challenge_jws))`.
-  * **Detached Challenge Optimization (Header Size Control):** Because HTTP reverse proxies commonly enforce a 4 KB to 8 KB per-header limit, when a client submits the PoIE via the `PoI-Envelope` HTTP request header to the same stateful Resource Server that issued `R0`, Node 0 MAY omit the full `challenge_jws` string and include only `challenge_id` and `node_hash: H0` (detached mode). For stateless verification or when the serialized `PoI-Envelope` exceeds 4 KB, the full envelope (including `challenge_jws`) SHOULD be transmitted in the HTTP request body (`Content-Type: application/poi-envelope+json`).
+* **Node 0 (`R0`, `PROPOSAL`):** Identifies the Resource Server's challenge. Its `node_hash` (`H0`) is `SHA-256(ASCII(challenge_jws))`, formatted as in Section 5.3 (`"sha256:"` followed by lowercase hexadecimal). Profiles that bind a node hash (for example, the PSEA `eat_nonce` in Section 6.3.3.2) use the 32 decoded digest octets.
+  * **Detached Challenge Optimization (Header Size Control):** Because HTTP reverse proxies commonly enforce a 4 KB to 8 KB per-header limit, when a client submits the PoIE via the `PoI-Envelope` HTTP request header to the same stateful Resource Server that issued `R0`, Node 0 MAY omit the full `challenge_jws` string and include only `challenge_id` and `node_hash: H0` (detached mode). Support for detached mode is OPTIONAL for Resource Servers; a Resource Server that does not retain issued challenges MUST reject an envelope whose `R0` omits `challenge_jws` with `malformed_poi_envelope`. For stateless verification or when the serialized `PoI-Envelope` exceeds 4 KB, the full envelope (including `challenge_jws`) SHOULD be transmitted in the HTTP request body (`Content-Type: application/poi-envelope+json`).
 * **Node 1 (`R1`):** Represents the human's decision (`APPROVE`, `REJECT`, or `SUPERCEDE`), referencing `H0` via `target_node_hash` (for `APPROVE`/`REJECT`) or `supercedes_node_hash` (for `SUPERCEDE`).
+* **Node hash for `k >= 1`:** The `node_hash` (`Hk`) of an attestation node is `SHA-256(JCS(node))` computed over the node object with its `node_hash` member removed, formatted as in Section 5.3. Because the node object contains the decision, the parent hash, the tier claim, and the attestation token, `Hk` commits to all of them. `H1` is the `head_node_hash` recorded in the CIR (Section 7.2).
 
 *Note: Multi-node chains (`seq >= 2`) for organizational escalations are defined in {{POI-CHAINED}}.*
 
@@ -337,104 +340,138 @@ In PoI Core, a Proof-of-Intent Envelope (`Content-Type: application/poi-envelope
 
 ## Attestation Profiles and Conformance
 
-Node `R1` carries cryptographic attestation evidence asserting the human's decision. Rather than binding the protocol to a single monolithic signature syntax, PoI Core defines an extensible attestation container governed by a strict conformance contract.
+Node `R1` carries cryptographic attestation evidence asserting the human's decision. PoI Core defines an extensible attestation container governed by a conformance contract (Section 6.3.2). Profiles that satisfy the contract are listed in the registry defined in Section 11.4.
+
+Assurance tiers are ordered `session-pop` (Tier 1) < `webauthn-uv` (Tier 2) < `webauthn-hw` (Tier 3). A node satisfies a `required_tier` when its attained tier is equal to or higher than the required tier. The attained tier is derived from the evidence: from the KCT for Tier 1, and from the Resource Server's enrollment record for the signing credential for Tier 2 and Tier 3. The node's `assurance_tier` member is the signer's claim. A Resource Server MUST reject a node whose claimed tier exceeds the tier its evidence supports, and MUST NOT treat the claim as evidence.
 
 ### Abstract Attestation Model and Wire Format
 
-The terminal node `R1` includes an `attestation` object:
+The terminal node `R1` includes an `assurance_tier` claim and an `attestation` object:
 
 ~~~json
 {
   "seq": 1,
   "node_type": "APPROVE",
+  "target_node_hash": "sha256:9f2c...",
   "assurance_tier": "urn:ietf:params:oauth:poi:tier:webauthn-uv",
   "attestation": {
     "format": "application/psea+jwt",
-    "token": "<attestation-token-payload>"
+    "token": "<compact-JWS>"
   }
 }
 ~~~
 
-* `format` (REQUIRED): Media type or URI identifying the attestation profile format.
-* `token` (REQUIRED): Encoded attestation payload, formatted according to the registered profile.
+* `format` (REQUIRED): A registered attestation format identifier (Section 11.4). JWS-based profiles use a media type; other profiles use a URN.
+* `token` (REQUIRED): The attestation evidence, encoded as the profile defines: a compact JWS string for JWS-based profiles, or a JSON object for `urn:ietf:params:oauth:poi:attestation:webauthn`.
 
 ### Attestation Profile Preconditions (The Conformance Contract)
 
-To maintain end-to-end cryptographic integrity across distributed human-in-the-loop interactions, any attestation format utilized within a Proof-of-Intent Envelope MUST satisfy five preconditions before it can be accepted by a conforming Resource Server:
+Any attestation format used within a Proof-of-Intent Envelope MUST satisfy the following six preconditions before a conforming Resource Server accepts it:
 
-1. **Canonical Parameter Commitment (WYSIWYE):** The attestation format MUST cryptographically commit to an octet sequence matching the SHA-256 digest of the canonical RFC 8785 (JSON Canonicalization Scheme) representation of the approved parameters (`asserted_params_hash` or `raw_params_hash`). Loose, non-canonical, or uncommitted parameter bindings MUST be rejected.
-2. **Causal Lineage Binding:** The attestation format MUST cryptographically bind the parent node hash (`target_node_hash` or `supercedes_node_hash`). This guarantees that an assertion cannot be replayed onto a different branch, state fork, or intent instance.
-3. **Intent and Freshness Anchor:** The attestation format MUST bind the stable `intent_id` and either a Resource Server-minted `challenge_id` or an unexpired temporal claim window (valid `[iat, exp]`, and `[nbf, exp]` when `nbf` is present).
-4. **Signer Identity and Assurance Attribution:** The attestation format MUST unambiguously resolve the human subject identifier (`sub`) and provide cryptographically verifiable evidence of the assurance tier attained (e.g., whether local User Verification / UV was performed by an enrolled authenticator or whether the signature was produced by an IdP-certified session key).
-5. **Deterministic Claim Extraction:** A conforming Resource Server MUST be able to deterministically extract `{asserted_params_hash, target_node_hash, intent_id, sub, assurance_tier}` statelessly without parsing application-specific business payloads.
+1. **Canonical Parameter Commitment (WYSIWYE):** The attestation MUST commit to the SHA-256 digest of the RFC 8785 canonical representation of the effective parameters. For `APPROVE` and `REJECT`, the commitment MAY be made through the parent node hash, because `H0` commits to the ICO and therefore to `raw_params_hash`. For `SUPERCEDE`, the attestation itself MUST commit to `asserted_params_hash`. Loose, non-canonical, or uncommitted parameter bindings MUST be rejected.
+2. **Decision Commitment:** The attestation MUST commit to the decision (`APPROVE`, `REJECT`, or `SUPERCEDE`) recorded in the node. A signature produced for one decision MUST NOT verify for another; otherwise an intermediary could relabel a rejection as an approval.
+3. **Causal Lineage Binding:** The attestation MUST commit to the parent node hash (`target_node_hash` or `supercedes_node_hash`), so that it cannot be replayed onto a different branch, state fork, or intent instance.
+4. **Intent and Challenge Binding:** The attestation MUST commit to `intent_id` and `challenge_id`, directly or through the parent node hash. A validity window alone is insufficient: it would let one attestation satisfy any challenge with identical parameters while the window is open. A profile that defines its own validity window MUST carry an expiry, and the verifier MUST enforce it.
+5. **Signer Identity and Assurance Attribution:** The attestation MUST resolve the human subject identifier (`sub`) and provide verifiable evidence of the attained tier: an IdP-certified session key (KCT) for Tier 1, or an enrolled authenticator credential with User Verification for Tier 2 and Tier 3.
+6. **Deterministic Claim Extraction:** A conforming Resource Server MUST be able to deterministically extract `{decision, parent_node_hash, intent_id, challenge_id, committed_params_hash, sub, attained_tier}` without parsing application-specific business payloads. For Tier 2 and Tier 3, extraction requires the signer's enrollment record (credential identifier, public key, subject, and credential class). The enrollment record is the only Resource Server state needed to verify evidence; consume-once admission state is specified in Section 7.1.
 
-If an attestation profile cannot assert all five properties, the Resource Server MUST reject the envelope with HTTP 400 (`malformed_poi_envelope`).
+If an attestation profile cannot assert all six properties, the Resource Server MUST reject the envelope with HTTP 400 (`malformed_poi_envelope`).
 
 ### Compliant Attestation Profiles (The Applicability Assessment)
 
-The following initial attestation formats have been evaluated against the preconditions in Section 6.3.2 and are designated as compliant profiles for use within Proof-of-Intent Envelopes:
+The following attestation formats satisfy Section 6.3.2 when used as profiled below.
 
-#### Session Key Proof-of-Possession (`application/poi+jwt;kind=session-pop`)
+#### Session Key Proof-of-Possession (`application/poi+jwt;kind=assert`)
 * **Underlying Primitive:** Ephemeral asymmetric key generated via the Web Cryptography API in browser memory (`extractable: false`), certified by an Authorization Server via a Key Certification Token (KCT, Section 4.2).
 * **Target Tier:** Tier 1 (`urn:ietf:params:oauth:poi:tier:session-pop`).
-* **Applicability Assessment:** Fulfills all Section 6.3.2 preconditions. The assertion JWS Protected Header carries the KCT (`kcert`), signs the canonical parameter hash inside its payload, and embeds `target_node_hash` and `challenge_id`.
+* **Token:** A compact JWS with `typ: "poi+jwt;kind=assert"`, signed by the EIK. The protected header MUST carry `kcert` containing the compact KCT.
+* **Assertion Payload:** `aud` (equal to `ico.iss`), `intent_id`, `challenge_id`, `seq` (1 in PoI Core), `decision`, `target_node_hash` (for `APPROVE` and `REJECT`) or `supercedes_node_hash` (for `SUPERCEDE`), and `client_iat` are REQUIRED. For `SUPERCEDE`, `asserted_params` and `asserted_params_hash` are REQUIRED. `justification` is OPTIONAL.
+* **Applicability Assessment:** Satisfies all six preconditions. The signed payload carries the decision, the parent node hash, `intent_id`, and `challenge_id`; parameters are committed through `H0` or `asserted_params_hash`; the subject and tier come from the KCT.
 
 #### Post-Session Execution Assurance (`application/psea+jwt`)
 * **Underlying Primitive:** Device-bound authenticator key (Secure Enclave, StrongBox, TEE) gated by local biometric or PIN user verification, conforming to {{PSEA}}.
-* **Target Tiers:** Tier 2 (`urn:ietf:params:oauth:poi:tier:webauthn-uv`) and Tier 3 (`urn:ietf:params:oauth:poi:tier:webauthn-hw`).
-* **Header and Media Type Conventions:** In accordance with {{PSEA}} Section 8.2, senders MUST set the JWS protected header `typ` parameter to `"psea-proof+jwt"`, while the outer container `attestation.format` specifies media type `application/psea+jwt`.
-* **Temporal Lifetime:** PSEA token validity is defined by its `iat` and `exp` claims per {{PSEA}} (typically defaulting to 300 seconds). For real-time ingestion, Resource Servers MUST confirm that the evaluation timestamp falls within the token's active window (`iat <= t_eval <= exp`). For offline audit verification, the Resource Server's Countersigned Intent Receipt (`cir.received_at`) establishes whether the token was verified within its active lifetime.
-* **Applicability Assessment:** Evaluated against Section 6.3.2. PSEA natively formats an Entity Attestation Token (EAT) signing the SHA-256 digest of the RFC 8785 canonical parameter representation (`psea_payload_hash`) under local user verification (`psea_uv.verified = true`). When encapsulated within a PoIE node, it satisfies all parameter commitment, lineage, and hardware assurance requirements.
+* **Target Tiers:** Tier 2 (`urn:ietf:params:oauth:poi:tier:webauthn-uv`). Tier 3 (`urn:ietf:params:oauth:poi:tier:webauthn-hw`) only when the enrollment record establishes a roaming hardware authenticator. The {{PSEA}} `psea_tier` value is opaque and does not distinguish platform from roaming authenticators, so the PoI tier is taken from the enrollment record.
+* **Header and Media Type Conventions:** In accordance with {{PSEA}} Section 8.2, senders MUST set the JWS protected header `typ` parameter to `"psea-proof+jwt"`, while `attestation.format` carries the media type `application/psea+jwt`.
+* **Profile Requirements:** A PSEA token in a PoIE MUST carry, and the Resource Server MUST verify:
+  * `aud` equal to `ico.iss`;
+  * `iss` equal to the issuer recorded in the signer's enrollment record;
+  * `psea_op` equal to `ico.authorization_details.type`;
+  * `psea_tier` equal to the value agreed for the enrolled credential;
+  * `psea_payload_hash` equal to `SHA-256(JCS(effective_params))`, compared on the decoded digest (Section 5.3);
+  * `eat_nonce` equal to the base64url encoding, without padding, of the 32-octet digest in the parent node hash, which binds the token to the challenge and its lineage (preconditions 3 and 4);
+  * `psea_stepup_selection` equal to the base64url encoding, without padding, of `SHA-256(JCS({"decision": <decision>, "target_node_hash": <parent node hash>}))`, which commits the token to the decision (precondition 2);
+  * `psea_uv.verified` equal to `true`;
+  * `jti`, which is consumed at most once per (`iss`, `jti`) during admission (Section 7.1); and
+  * `psea_counter`, which MUST be strictly greater than the last value accepted for the credential ({{PSEA}} Section 3.10).
+* **SUPERCEDE:** A PSEA token does not carry asserted parameters, so it cannot establish what the human substituted. A Resource Server MUST reject a `SUPERCEDE` node attested with `application/psea+jwt`. Signers who edit parameters use the session-key or WebAuthn profile.
+* **Temporal Lifetime:** `iat` and `exp` are REQUIRED. A Resource Server MUST reject the token when the evaluation time is at or after `exp`, or before `iat`, beyond a clock skew tolerance that SHOULD NOT exceed 60 seconds (consistent with {{PSEA}} Section 3.11). For offline audit, `cir.received_at` is the evaluation time.
+* **Applicability Assessment:** When profiled as above, satisfies all six preconditions. Without `eat_nonce` and `psea_stepup_selection`, a PSEA token commits to the parameters only, fails preconditions 2 through 4, and MUST be rejected.
 
-#### Direct WebAuthn Assertion (`application/webauthn+json`)
-* **Underlying Primitive:** Standard W3C WebAuthn assertion dictionary (`authenticatorData`, `clientDataJSON`, `signature`) produced by `navigator.credentials.get()`.
-* **Target Tiers:** Tier 2 and Tier 3 in browser clients without native EAT library dependencies.
-* **Applicability Assessment:** Evaluated against Section 6.3.2. By setting the WebAuthn challenge equal to the 32-byte canonical challenge hash computed by the Resource Server, the resulting authenticator data and signature satisfy Section 6.3.2 requirements without requiring intermediate token wrappers.
+#### Direct WebAuthn Assertion (`urn:ietf:params:oauth:poi:attestation:webauthn`)
+* **Underlying Primitive:** A W3C {{WebAuthn}} assertion produced by `navigator.credentials.get()` with `userVerification: "required"`.
+* **Target Tiers:** Tier 2. Tier 3 only when the enrollment record establishes a cross-platform hardware authenticator, as verified through authenticator attestation at registration.
+* **Token:** A JSON object with the members `assertion_payload` (a JSON object with the same claims as the session-key assertion payload above), `credential_id`, `authenticator_data`, `client_data_json`, and `signature` (each base64url-encoded).
+* **Challenge Construction:** The Signing Vault sets the WebAuthn `challenge` to the 32-octet `SHA-256(JCS(assertion_payload))`. The Resource Server recomputes the challenge from the carried `assertion_payload`; it does not supply it. Because `assertion_payload` carries the decision, the parent node hash, `intent_id`, `challenge_id`, and any asserted parameters, the authenticator signature commits to all of them.
+* **Enrollment State:** The Resource Server maintains an enrollment record per credential: the credential identifier, public key, subject, credential class (and therefore the highest tier it supports), and the last accepted signature counter.
+* **Applicability Assessment:** When profiled as above and verified as specified in Section 7.1, satisfies all six preconditions.
 
 
-# Stateless Verification and Countersigned Intent Receipts (CIR)
+# Verification, Admission, and Countersigned Intent Receipts (CIR)
 
-## Normative Core Verification Algorithm
+Processing a PoIE has two parts. **Verification** (Section 7.1, steps 1 through 4) checks the evidence; it is stateless given the Resource Server's trusted keys and, for Tier 2 and Tier 3, the signer's enrollment record, and an offline auditor performs the same steps. **Admission** (step 5) is stateful: the Resource Server records the challenge as consumed so that one approval authorizes at most one execution.
 
-A Resource Server or offline verifier validating a PoI Core envelope (`[R0, R1]`) MUST execute the following steps in order. Verifiers MAY apply a configurable clock skew tolerance when evaluating `nbf` and `exp` claims, which SHOULD NOT exceed 60 seconds. If any step fails, verification MUST fail immediately:
+## Normative Core Verification and Admission Algorithm
+
+A Resource Server validating a PoI Core envelope (`[R0, R1]`) MUST execute the following steps in order. Verifiers MAY apply a configurable clock skew tolerance when evaluating `nbf` and `exp` claims, which SHOULD NOT exceed 60 seconds. If any step fails, processing MUST stop and the envelope MUST be rejected:
 
 1. **Validate Root Proposal (`R0`):**
    * Parse `chain[0].challenge_jws` (or retrieve the cached ICO via `challenge_id` if detached), verify `typ` is `"poi+jwt;kind=chal"`, and verify its signature using the Resource Server's trusted public key.
+   * Confirm `ico.iss` equals this Resource Server's issuer identifier. A challenge minted for a different issuer that shares the signing key MUST be rejected (`audience_mismatch`).
    * Confirm `chain[0].node_hash == SHA-256(ASCII(challenge_jws))`.
-   * At ingestion time, confirm current server time `t_eval` satisfies `t_eval <= ico.exp` (and `ico.nbf <= t_eval` when `nbf` is present) and `ico.challenge_id` has not been previously consumed.
+   * Confirm `ico.challenge_id` and `ico.exp` are present. At ingestion time, confirm current server time `t_eval` satisfies `t_eval <= ico.exp` (and `ico.nbf <= t_eval` when `nbf` is present).
 2. **Validate Link and Digests (`R1`):**
    * Confirm `chain[1].seq == 1`.
    * Confirm the parent reference (`target_node_hash` for `APPROVE`/`REJECT`, or `supercedes_node_hash` for `SUPERCEDE`) equals `chain[0].node_hash` (`H0`).
-   * Confirm `assertion.aud == ico.iss` (and, if `kcert.aud` is present, confirm `ico.iss` is in `kcert.aud`).
    * If `chain[1].node_type == "SUPERCEDE"`, recompute `SHA-256(JCS(asserted_params))` over the raw JSON tree and confirm it matches `asserted_params_hash`.
-3. **Validate Attestation and Assurance Tier (`R1`):**
-   * Inspect `chain[1].attestation.format`. The verifier MUST confirm the attestation matches a recognized profile (Section 6.3) and fulfills the preconditions in Section 6.3.2.
-   * **For `application/poi+jwt;kind=session-pop` (Tier 1):**
+3. **Validate Attestation, Decision, and Assurance Tier (`R1`):**
+   * Confirm `chain[1].attestation.format` identifies a profile in Section 6.3.3 and verify the token as that profile specifies. Confirm that the attestation's audience equals `ico.iss` (and, if `kcert.aud` is present, that `ico.iss` is in `kcert.aud`), that it binds `ico.intent_id` and `ico.challenge_id` (Section 6.3.2, precondition 4), and that the decision it commits to equals `chain[1].node_type`.
+   * **For `application/poi+jwt;kind=assert` (Tier 1):**
      1. Extract `kcert` from the protected header, verify its `typ` is `"poi+jwt;kind=kct"`, and verify its signature against the Authorization Server's trusted public key.
      2. Let `t_eval` be the current server time (at ingestion) or `cir.received_at` (during offline audit). Confirm `t_eval <= kcert.exp` (and `kcert.nbf <= t_eval` when `nbf` is present).
-     3. Verify `assertion_jws` has `typ: "poi+jwt;kind=assert"` and verify its signature using the public key in `kcert.cnf.jwk`.
+     3. Verify the token has `typ: "poi+jwt;kind=assert"` and verify its signature using the public key in `kcert.cnf.jwk`.
+     4. Confirm the assertion payload carries the claims required by Section 6.3.3.1 and that `seq`, `decision`, and the parent node hash match the node.
    * **For `application/psea+jwt` (Tier 2 / Tier 3):**
-     1. Verify the JWS protected header `typ` is `"psea-proof+jwt"` and validate the PSEA token according to {{PSEA}}.
-     2. Confirm that current evaluation time satisfies `psea.iat <= t_eval <= psea.exp` (or `psea.iat <= cir.received_at <= psea.exp` during offline audit).
-     3. Verify that the parameter hash embedded in `psea.psea_payload_hash` matches `SHA-256(JCS(effective_params))` and that parent linkage resolves to `H0`.
-     4. Confirm that the authenticator's local User Verification flag (`psea.psea_uv.verified`) is true and that the hardware tier matches the required assurance level.
-   * **For `application/webauthn+json` (Tier 2 / Tier 3):**
-     1. Parse `clientDataJSON` and confirm `type == "webauthn.get"`, `challenge == base64url(SHA-256(JCS(assertion_payload)))`, and `origin` matches the configured Signing Vault origin. If `clientDataJSON.crossOrigin == true` (when the Signing Vault is an embedded cross-origin iframe), confirm `clientDataJSON.topOrigin` matches the allowlisted host application origin.
-     2. Verify the RP ID hash in `authenticatorData` and confirm `UP == 1` and `UV == 1`.
-     3. Verify the WebAuthn signature against the registered credential public key associated with the signer and confirm the credential class matches the tier (`platform` vs. `cross-platform` hardware).
+     1. Resolve the enrollment record by the protected header `kid` and verify the JWS (`typ: "psea-proof+jwt"`) with the enrolled public key. No other key MAY be substituted when the `kid` does not resolve.
+     2. Verify every profile requirement in Section 6.3.3.2, including the temporal lifetime.
+     3. Reject the node if it is a `SUPERCEDE` node.
+   * **For `urn:ietf:params:oauth:poi:attestation:webauthn` (Tier 2 / Tier 3):**
+     1. Resolve the enrollment record by `credential_id`. No other key MAY be substituted when the credential does not resolve.
+     2. Recompute the expected challenge as `base64url(SHA-256(JCS(assertion_payload)))`. Parse `client_data_json` and confirm `type == "webauthn.get"`, `challenge` equals the expected challenge, and `origin` matches the configured Signing Vault origin. If `crossOrigin` is `true` (when the Signing Vault is an embedded cross-origin iframe), confirm `topOrigin` matches an allowlisted host application origin.
+     3. Confirm the RP ID hash in `authenticator_data` equals `SHA-256` of the configured RP ID, and that `UP == 1` and `UV == 1`.
+     4. Verify `signature` over `authenticator_data || SHA-256(client_data_json)` with the enrolled public key.
+     5. If either the stored or the presented signature counter is non-zero, the presented counter MUST be greater than the stored counter; the counter is checked and advanced during admission (step 5).
+   * Derive the attained tier from the evidence (Section 6.3) and confirm it satisfies `ico.required_tier` and the Resource Server's current policy for the effective parameters; otherwise reject with `insufficient_assurance_tier`.
 4. **Determine Effective Parameter State:**
    * If `R1` is `APPROVE`, the effective parameters are `R0.raw_params`.
    * If `R1` is `SUPERCEDE` and satisfies the Resource Server's assurance and authority policy, the effective parameters are strictly `R1.asserted_params`. Parameters in `R0` that are omitted in `asserted_params` are discarded and MUST NOT be merged.
+   * If `R1` is `REJECT`, the Resource Server records the rejection and aborts (`intent_rejected`).
+5. **Consume-Once Admission (stateful):**
+   * Before executing the action, the Resource Server MUST atomically record `ico.challenge_id` as consumed. If it is already recorded, the envelope MUST be rejected with `challenge_replayed`.
+   * For `application/psea+jwt`, the Resource Server MUST also atomically consume (`iss`, `jti`) and advance the credential's `psea_counter`. For the WebAuthn profile, it MUST advance the stored signature counter when the counter is in use.
+   * The consumed-challenge record MUST be retained at least until `ico.exp` plus the clock skew tolerance applied in step 1, because the challenge still verifies during that interval.
+   * The record MUST survive a restart of the Resource Server and MUST be shared by every instance that accepts envelopes for the same issuer. A per-process record re-admits the same envelope after a restart or at a second instance.
+   * If the consumed-state store is unavailable, the Resource Server MUST reject the envelope and SHOULD respond with HTTP `503 Service Unavailable`.
+   * Offline auditors repeat steps 1 through 4 only; step 5 is performed once, at ingestion.
 
 ## Countersigned Intent Receipt (CIR)
 
 Because EIK certificates (`KCT`) are short-lived, an attacker who compromises a client host *after* a KCT expires (or just before expiry) might attempt to forge a backdated assertion timestamped inside `[nbf, exp]` and inject it into an audit database later.
 
 To defeat backdated audit forgery:
-1. Immediately upon verifying a PoIE while the KCT is within its active `[nbf, exp]` window, the Resource Server (or an append-only transparency service per {{RFC9943}}) MUST generate a **Countersigned Intent Receipt (CIR)** (`typ: "poi+jwt;kind=rcpt"`).
+1. Upon admitting a PoIE (Section 7.1, step 5) while the KCT is within its active `[nbf, exp]` window, the Resource Server (or an append-only transparency service per {{RFC9943}}) MUST generate a **Countersigned Intent Receipt (CIR)** (`typ: "poi+jwt;kind=rcpt"`).
 2. The CIR MUST include `received_at` (server ingestion NumericDate), `intent_id`, `head_node_hash` (`H1`), `committed_params_hash` (computed as `SHA-256(JCS(effective_params))`), and the Resource Server's cryptographic signature.
 3. Offline auditors MUST verify that `kcert.nbf <= cir.received_at <= kcert.exp` for all Tier 1 assertions in the receipted chain.
-4. The structural semantics of the CIR align with related high-assurance agent authorization receipt frameworks (such as {{EP-RECEIPTS}}), enabling interoperable cross-system ingestion into audit transparency ledgers.
+4. A CIR is admission evidence: it records that the Resource Server verified and consumed the PoIE at `received_at`. It does not record that the action executed, or its outcome. Deployments that need terminal execution evidence SHOULD record a separate completion record keyed by `intent_id` (Section 9.4). Translating a CIR into another receipt format, such as {{EP-RECEIPTS}}, requires preserving each format's signed inputs and trust context; matching field names is not sufficient.
 
 
 # Error Handling and Failure Modes
@@ -481,11 +518,11 @@ Content-Type: application/problem+json
 * **`invalid_ico_signature`** (HTTP `400 Bad Request` or Client-Side Rejection):
   * *Trigger:* The root Intent Challenge Object (`chain[0].challenge_jws`) fails signature verification against the Resource Server's public key or has `typ != "poi+jwt;kind=chal"`. If the Signing Vault detects this error upon receiving a challenge from an intermediary agent, the Signing Vault MUST refuse to render the approval prompt and MUST abort signing immediately.
 * **`invalid_assertion_signature`** (HTTP `401 Unauthorized`):
-  * *Trigger:* For Tier 1, the JWS signature on `assertion_jws` does not verify using `kcert.cnf.jwk`. For Tier 2/3, the WebAuthn `signature` does not verify over `authenticatorData || SHA-256(clientDataJSON)` using the user's registered credential public key.
+  * *Trigger:* For Tier 1, the assertion JWS signature does not verify using `kcert.cnf.jwk`. For Tier 2/3, the PSEA JWS or the WebAuthn `signature` does not verify under the enrolled credential's public key, or no enrollment record resolves for the presented `kid` or `credential_id`.
 * **`audience_mismatch`** (HTTP `401 Unauthorized`):
-  * *Trigger:* The `aud` claim in `assertion_jws` (or `assertion_payload`) does not match the Resource Server's `iss` URI in the ICO (`assertion.aud != ico.iss`), or `kcert.aud` is present and excludes the Resource Server.
+  * *Trigger:* The audience of the attestation (the `aud` claim of the assertion, `assertion_payload`, or PSEA token) does not match the Resource Server's `iss` URI in the ICO, `kcert.aud` is present and excludes the Resource Server, or `ico.iss` is not this Resource Server's issuer identifier.
 * **`invalid_webauthn_attestation`** (HTTP `401 Unauthorized`):
-  * *Trigger:* In a Tier 2 or Tier 3 assertion, one or more WebAuthn verification invariants failed (`clientDataJSON.type != "webauthn.get"`, `origin` or `topOrigin` mismatch, RP ID hash mismatch, `UP` or `UV` bit is `0`, or authenticator class does not match the tier requirement).
+  * *Trigger:* In a Tier 2 or Tier 3 assertion, one or more WebAuthn verification invariants failed (`clientDataJSON.type != "webauthn.get"`, challenge mismatch, `origin` or `topOrigin` mismatch, RP ID hash mismatch, `UP` or `UV` bit is `0`, signature counter did not increase, or the enrolled credential class does not support the claimed tier).
 * **`invalid_rollover_proof`** (HTTP `401 Unauthorized`):
   * *Trigger:* During PoP Key Chaining Rotation (Section 4.3), the signature on the `poi+jwt;kind=roll` request fails verification under the active predecessor key `K_n` specified in `kcert.cnf.jwk`.
 
@@ -504,7 +541,9 @@ Content-Type: application/problem+json
 * **`session_revoked`** (HTTP `401 Unauthorized`):
   * *Trigger:* The logical `session_id` referenced in the KCT has been administratively terminated or logged out prior to `kcert.exp`.
 * **`challenge_replayed`** (HTTP `409 Conflict`):
-  * *Trigger:* The `challenge_id` in the ICO or the `nonce` in a key rollover request has already been consumed.
+  * *Trigger:* The `challenge_id` in the ICO, the (`iss`, `jti`) of a PSEA token, or the `nonce` in a key rollover request has already been consumed (Section 7.1, step 5).
+* **`intent_outcome_unknown`** (HTTP `409 Conflict`):
+  * *Trigger:* A previously admitted PoIE for the same `intent_id` has no known execution outcome (Section 9.4). The Resource Server admits no further approval for the intent until the outcome is resolved.
 
 ## Envelope Integrity and Step-Up Errors
 
@@ -542,6 +581,7 @@ Content-Type: application/problem+json
 | `session_max_age_exceeded` | Temporal (`auth_time`) | `401` | Yes (After interactive re-auth) |
 | `session_revoked` | Temporal / Session | `401` | No (Session terminated) |
 | `challenge_replayed` | Replay | `409` | No (Request new challenge) |
+| `intent_outcome_unknown` | Recovery | `409` | No (Resolve the prior outcome first) |
 | `malformed_poi_envelope` | Syntax / Format | `400` | No |
 | `chain_continuity_broken` | Chain Integrity | `422` | No (Tampered or broken link) |
 | `params_hash_mismatch` | Payload Integrity | `422` | No (Tampered parameters) |
@@ -570,15 +610,24 @@ Verification of `client_iat` alone is insufficient for offline non-repudiation b
 
 ## Application Crash Recovery and Idempotency Demarcation
 
-Proof of Intent guarantees cryptographic verification of human intent, causality, and non-repudiation. It does not implement distributed transaction coordination, two-phase commit (2PC), or saga recovery.
+Proof-of-Intent verifies human intent, causality, and non-repudiation. It does not implement distributed transaction coordination, two-phase commit (2PC), or saga recovery. It does define the identifiers and admission rules that recovery depends on:
 
-A system crash in a downstream Resource Server or external provider during execution does not alter or invalidate the human intent recorded in a verified PoIE. If the Resource Server and downstream providers support idempotent execution, the server MUST key external side-effects using the deterministic `head_node_hash` or `intent_id`. Upon reboot or retry, the application replays or queries execution status without user intervention.
+1. **Stable occurrence identity:** `intent_id` identifies the business occurrence and stays the same across reapproval (Section 5.2); `challenge_id` identifies one approval of it.
+2. **Retries happen after admission:** Once a PoIE is admitted (Section 7.1, step 5), retrying the downstream effect is an application operation keyed on `intent_id` or the CIR. The application MUST NOT re-present the PoIE to retry; a re-presented envelope is rejected with `challenge_replayed` by design.
+3. **Unknown outcomes block reapproval:** If an admitted effect has an unknown outcome (for example, a provider may have completed the action before a crash or a lost response), the Resource Server MUST NOT admit another PoIE for the same `intent_id` until the outcome is resolved as completed or failed, and MUST reject such envelopes with `intent_outcome_unknown`. An admission with no recorded outcome (for example, after a crash) is treated as unknown. An unknown outcome is not a failure, and a fresh approval MUST NOT reopen an occurrence that may already have executed.
+4. **Downstream idempotency:** Resource Servers SHOULD pass `intent_id` as the idempotency key to downstream providers that support one, and SHOULD record a completion record (Section 7.2) once the outcome is known.
 
-If a downstream provider is non-idempotent or execution terminates in an ambiguous partial state, resolving that state belongs strictly to application domain logic (such as automated compensating transactions or operations exception queues). Human cryptographic signatures MUST NOT serve as an automated retry loop for failed network calls or crashed worker daemons.
+If a downstream provider is non-idempotent or execution ends in an ambiguous partial state, resolving that state belongs to application domain logic (such as compensating transactions or an operations exception queue). Human signatures MUST NOT serve as an automated retry loop for failed network calls or crashed worker processes.
 
 ## Parameter Replacement Invariants for SUPERCEDE
 
 When an enforcement engine processes a `SUPERCEDE` node, it MUST replace the executable parameter context entirely with `asserted_params`. Implementations MUST NOT perform a partial or shallow map merge of `asserted_params` into the original `raw_params`. Retaining parameters from `R0` that were omitted in `asserted_params` introduces security vulnerabilities where unreviewed or malicious parameters proposed by an untrusted agent persist into execution.
+
+## Consume-Once State and Replay
+
+Consume-once admission (Section 7.1, step 5) is the only control that stops an intermediary from re-presenting a verified envelope; the evidence itself remains valid until it expires. Consumed state kept in process memory re-admits an envelope after a restart and at any other instance. A consumed entry that expires at `ico.exp` re-admits the envelope during the clock skew interval in which it still verifies. The consumed-state store is therefore part of the security boundary: its retention covers `exp` plus skew, it is shared across instances, and its unavailability rejects envelopes.
+
+Attestation tokens with their own identifiers (such as the PSEA `jti`) are consumed in the same store. Binding each attestation to its challenge (Section 6.3.2, precondition 4) prevents one attestation from satisfying a second challenge with identical parameters; consuming the token identifier provides defense in depth.
 
 
 # Privacy Considerations
@@ -601,7 +650,7 @@ This document requests registration of two media types in the IANA "Media Types"
     * `kct` (Key Certification Token, Section 4.2)
     * `roll` (PoP Key Rollover Request, Section 4.3)
     * `chal` (Intent Challenge Object, Section 5.2)
-    * `assert` (Proof-of-Intent Assertion JWS, Section 6.3.1)
+    * `assert` (Proof-of-Intent Assertion JWS, Section 6.3.3.1)
     * `rcpt` (Countersigned Intent Receipt, Section 7.2)
 * **Optional parameters:** None
 * **Encoding considerations:** 7-bit ASCII compact JWS serialization per {{RFC7515}}.
@@ -633,19 +682,21 @@ This document registers the following URNs in the "OAuth URI" registry ({{RFC675
   * `urn:ietf:params:oauth:poi:tier:session-pop` (Tier 1: Ephemeral Session Key)
   * `urn:ietf:params:oauth:poi:tier:webauthn-uv` (Tier 2: Platform Biometric / User Verification)
   * `urn:ietf:params:oauth:poi:tier:webauthn-hw` (Tier 3: Cross-Platform Hardware Authenticator)
+* **Attestation Format URIs (`urn:ietf:params:oauth:poi:attestation`):**
+  * `urn:ietf:params:oauth:poi:attestation:webauthn` (Direct WebAuthn assertion, Section 6.3.3.3)
 * **PoI Error Code Registry (`urn:ietf:params:oauth:poi:error`):**
-  * Populated with the 19 core error codes defined in Section 8.5.
+  * Populated with the 20 core error codes defined in Section 8.5.
 
 ## Proof-of-Intent Attestation Formats Registry
 
 This document requests the creation of a new registry titled "Proof-of-Intent Attestation Formats" within the "Web Authorization Protocol (oauth)" group.
 
-Registration policy: Specification Required ({{RFC8174}}).
+Registration policy: Specification Required ({{RFC8126}}). Each registration names the format identifier, the referencing specification, the target tiers, and an applicability assessment against the six preconditions in Section 6.3.2.
 
 Initial entries:
-* **`application/poi+jwt;kind=session-pop`**: Ephemeral Session Key Proof-of-Possession (Section 6.3.3.1).
-* **`application/psea+jwt`**: Post-Session Execution Assurance EAT Profile ({{PSEA}}, Section 6.3.3.2).
-* **`application/webauthn+json`**: Direct W3C WebAuthn Assertion Dictionary (Section 6.3.3.3).
+* **`application/poi+jwt;kind=assert`**: Ephemeral Session Key Proof-of-Possession (Section 6.3.3.1).
+* **`application/psea+jwt`**: PSEA EAT profile ({{PSEA}}) as profiled in Section 6.3.3.2.
+* **`urn:ietf:params:oauth:poi:attestation:webauthn`**: Direct W3C WebAuthn assertion (Section 6.3.3.3).
 
 ## JWT Claim Registrations
 
@@ -656,6 +707,22 @@ This document registers the following claims in the IANA "JSON Web Token Claims"
 * `raw_params_hash`: Canonical SHA-256 digest (via RFC 8785 JCS) of proposed parameters.
 * `supercedes_node_hash`: Hash of the prior assertion node superceded by a `SUPERCEDE` transition.
 * `asserted_params_hash`: Canonical SHA-256 digest (via RFC 8785 JCS) of human-modified parameters.
+
+
+# Implementation Status
+
+Note to RFC Editor: please remove this section and the reference to {{RFC7942}} before publication.
+
+This section records the status of known implementations of the protocol defined by this specification at the time of posting, per {{RFC7942}}. Its inclusion does not imply endorsement by the IETF.
+
+* **Organization:** Barefoot Coders, LLC (Mandrel Project).
+* **Implementation:** Mandrel reference implementation; `mandrel-collet` is licensed under the Business Source License 1.1 and the other repositories under the Apache License 2.0. The state that corresponds to this revision carries the tag `poi-core-01-rc.2` in each repository under `https://gitlab.com/the-mandrel-project/`: `mandrel-go` (verifier library, Go module `v1.1.0-rc.2`), `mandrel-collet` (Resource Server enforcement proxy), `mandrel-spec` (wire schema and policy contract), `mandrel-cli` (policy validator and generator), and `mandrel-demo` (end-to-end demonstration).
+* **Coverage:** ICO issuance and verification; the session-key, PSEA, and WebAuthn profiles as profiled in Section 6.3.3, including decision binding, the PSEA nonce and selection binding, WebAuthn Relying Party checks, and enrollment-derived tiers; consume-once admission keyed on `challenge_id` with retention through `exp` plus skew, a shared durable store, PSEA `jti` consumption, and counter checks; CIR minting.
+* **Also implemented:** the `attestation` container of Section 6.3.1 with node hashes over the canonical node object (legacy `assertion_jws`, `webauthn_proof`, and `assertion_payload` members are still accepted during transition, hashed over the token alone); `intent_id` reuse across reapproval, keyed on the governed request (spec, turn, attribute, and parameters); completion records and unknown-outcome tracking (Section 9.4), where definitive provider errors record a failure and transport or server errors record an unknown outcome; Signing Vault refusal of non-conforming `display_facts`.
+* **Known gaps:** parameters are string-valued; detached `R0` (Section 6.1) is not supported; CIRs are not returned to the caller; `editable_schema` is accepted but `asserted_params` are not yet validated against it; unknown outcomes are resolved through a library call, without an authenticated operator interface.
+* **Maturity:** Prototype; release candidate for review.
+* **Testing:** Unit tests include negative cases for decision relabeling, cross-intent attestation reuse, replay inside the clock skew interval, and replay after restart; an end-to-end demonstration exercises challenge issuance, approval, `SUPERCEDE`, tampering, and forged user tokens.
+* **Contact:** Paul Charles Williams (paul@barefootcoders.com).
 
 
 # Acknowledgements
