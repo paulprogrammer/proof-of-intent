@@ -57,17 +57,32 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 
 - [x] **Submodule Setup**: Added `mandrel-collet` and `mandrel-go` submodules via native SSH.
 - [x] **Working Branches**: Created and checked out `feat/poi-reference-impl` in both submodules.
+- [x] **Additional Submodules (2026-11-09)**: Added `mandrel-demo` (mock Signing Vault and demo harness) and `mandrel-spec` (proto, schema, vectors) on new local `feat/poi-reference-impl` branches; `mandrel-demo` added to `go.work`. Rule recorded in `CONTRIBUTING.md` Section 3: PoI feature work is edited only in the submodules, never on submodule `main`.
+  - [ ] Push the `feat/poi-reference-impl` branches for `mandrel-demo` and `mandrel-spec` when they first carry changes (currently local only).
+  - [ ] Update the mock Signing Vault for `assertion_payload` (WebAuthn) and the PSEA nonce/selection profile; run `scripts/demo-poi.sh` end to end.
+  - [ ] Move PoI test vectors (`testdata/vectors/psea/`) into `mandrel-spec/vectors` and sync them into mandrel-go.
 - [x] **Bug Fix: `CommittedParamsHash` Assignment**: `layers.go` computes `poi.HashParams(result.EffectiveParams)`. Note: correct but currently unobservable outside tests (see Receipt Propagation below).
 - [x] **Bug Fix: Complete Parameter Replacement on `SUPERCEDE`**: `req.Context` is replaced wholesale. Follow-up tracked under Metadata Separation.
 
-### 2.2 Critical: Fix Before Any Collaborator Review
+### 2.2 Critical: Fix Before Any Collaborator Review (Tier 0, fixed 2026-11-09, uncommitted)
 
-- [ ] **Override Token Bypass**: `mandrel-collet/pkg/enforcement/layers.go:460` skips PoI for `challenge` actions when `mandrel.override_token` or `override_token` is any non-empty string. Nothing validates the token, although the log says "valid Override Token". Present at 6488224 (the commit a reviewer reviewed). Validate a signed, scoped, expiring token or remove the path.
-- [ ] **WebAuthn Decision Not Signed**: `mandrel-go/pkg/poi/verifier.go:344` uses `SHA-256(prevNode.NodeHash)` as the challenge, so a REJECT signature relabeled as APPROVE verifies (PoC confirmed). Bind the challenge to `SHA-256(JCS(assertion_payload))` per draft 7.1.
-- [ ] **WebAuthn Relying Party Checks**: `webauthn.go` does not verify `origin`, `crossOrigin`/`topOrigin`, the RP ID hash (`authenticatorData[0:32]`), sign count, or credential class. PoC passed with an attacker origin and a zero RP ID hash.
-- [ ] **PSEA Binding and Appraisal**: `VerifyPSEAToken` checks only the signature, `typ`, time and `psea_uv`. A token with the wrong `aud` and a reused `jti` approved two distinct intents (PoC confirmed). Require `eat_nonce` bound to the chain, appraise `aud`, `iss`, `psea_op` and `psea_tier` inside the verifier, require `exp`, and consume `jti`.
-- [ ] **Enrolled Key Fallback to IdP Key**: `verifier.go:278` and `verifier.go:337` fall back to `idpPubKey` when the `kid` or credential ID does not resolve. An IdP-signed PSEA token with no `exp` verified at hardware tier (PoC confirmed). Collet never passes `WithKeyResolver`, so this fallback is its only path, and with no IdP configured it uses Collet's own key. Fail closed on resolution miss and wire a resolver into Collet.
-- [ ] **Self-Declared Assurance Tier**: `node.AssuranceTier` is client-supplied. Collet's tier check at `layers.go:562` treats `webauthn-hw` as satisfying any requirement. Derive the tier from enrollment and attestation evidence, never from the node label.
+- [x] **Override Token Bypass**: Removed. `challenge` now fails closed like `challenge-always` and logs a warning when an override key is present. `TestEnforce_PoIActionRefinement` now asserts no bypass for either key.
+  - [ ] Follow-up: specify a signed, scoped, expiring override format in mandrel-spec if `challenge` vs. `challenge-always` is still wanted.
+- [x] **WebAuthn Decision Not Signed**: Nodes now carry `assertion_payload`; the WebAuthn challenge is `base64url(SHA-256(JCS(assertion_payload)))` per draft 7.1, and the payload must match aud, challenge_id, intent_id, seq, decision and parent hash. Relabel tests added.
+- [x] **WebAuthn Relying Party Checks**: Origin allowlist, `crossOrigin`/`topOrigin` allowlist, RP ID hash and UV are always enforced; verification fails closed without a configured relying party. The sign count is returned and Collet requires it to increase (zero allowed for counterless authenticators).
+  - [ ] Credential class (platform vs. cross-platform) is taken from the enrollment record's tier; registration-time attestation remains the enrollment system's job.
+- [x] **PSEA Binding and Appraisal**: `eat_nonce` must equal base64url of the parent node digest, `psea_stepup_selection` must commit to `{decision, target_node_hash}`, and `iss`, `aud`, `psea_op`, `psea_tier`, `jti`, `iat` and `exp` are required and appraised in the verifier (`AppraisePSEA`). Collet consumes `(iss, jti)` once and requires `psea_counter` to strictly increase.
+  - [ ] Confirm the nonce and selection construction with the PSEA author (PoI-side profile choice; PSEA leaves both deployment-defined).
+- [x] **Enrolled Key Fallback to IdP Key**: Removed. Credentials resolve only through `WithCredentialResolver` / `WithEnrolledCredential`, with a profile check. Collet loads them from the new `--poi-trust-store` JSON file. Collet no longer substitutes its own key when no IdP key is configured; session-pop fails closed instead.
+- [x] **Self-Declared Assurance Tier**: Node tier claims must be backed by the enrollment record (`TierSatisfies`). Collet checks the head signer's tier by rank; unknown required tiers fail closed. The undocumented `TierPSEA` URN was removed.
+
+### 2.2a Follow-ups Created by the Tier 0 Fixes
+
+- [ ] **Standalone Build Broken Until Release**: `GOWORK=off go build` of Collet now fails to compile against the pinned mandrel-go v1.0.17. This is louder than before (it previously built and shipped the old verifier). Resolved by Release Plumbing in 2.4.
+- [ ] **Document `--poi-trust-store`**: Add the flag and file format to `content/docs/reference/collet.md` in mandrel-web, or the `flag-drift` CI check fails.
+- [ ] **Draft: Document `assertion_payload`** on Direct WebAuthn nodes (6.3.3.3) and the PSEA nonce/selection profile (6.3.3.2).
+- [ ] **Tier 1 Lineage Now Enforced**: Session-pop assertions must now match `seq` and `target_node_hash`/`supercedes_node_hash`, and REJECT must carry `decision: REJECT`. This is draft-conformant, but check mandrel-demo and Signing Vault clients for compatibility.
+- [ ] **Counter Store Durability**: `MemoryCounterTracker` has the same restart and replica limits as the replay tracker; include it in the durable store work.
 
 ### 2.3 Reopened
 
@@ -80,17 +95,19 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 - [ ] **Feature: PSEA Attestation Verifier Integration** (reopened)
   - [x] Unpacker for `typ: "psea-proof+jwt"` with signature, time and UV checks.
   - [ ] Binding and appraisal gaps: see Critical section.
-  - [ ] SUPERCEDE at PSEA and WebAuthn tiers never updates effective parameters (`verifier.go:292`); a SUPERCEDE silently approves `R0` (PoC confirmed). Carry asserted parameters in the signed input or reject SUPERCEDE at these tiers.
+  - [x] SUPERCEDE at PSEA tier is now rejected (the token cannot carry asserted parameters). SUPERCEDE at WebAuthn tier works through the signed `assertion_payload`, and omitted `R0` keys are dropped (tested).
   - [ ] Type-preserving parameters: `map[string]string` cannot reproduce the PSEA -03 baseline sample (numeric `amount: 500`). Hashes confirmed to differ. Move to typed JSON values end to end.
 - [ ] **Feature: Passkey / WebAuthn Verification** (reopened)
   - [x] Replaced the `unsupported assurance tier` stub with signature and UP/UV verification.
-  - [ ] Decision binding and relying party checks: see Critical section.
+  - [x] Decision binding and relying party checks: see Critical section.
+  - [ ] Interop test with a real authenticator ceremony (current tests use synthetic authenticator data).
 - [ ] **Regression & Conformance Test Suite** (reopened)
   - [x] SUPERCEDE parameter omission, CIR hash, in-flight tampering, replay (sequential, concurrent, TTL, namespaced).
-  - [ ] Port the review PoCs as negative tests: WebAuthn REJECT relabel, PSEA cross-intent reuse, IdP-key fallback, PSEA SUPERCEDE keeping `R0`, vector type mismatch. Temporary copies live in the review session scratchpad and will not persist.
+  - [x] Ported the review PoCs as negative tests in `mandrel-go/pkg/poi/webauthn_test.go` and `psea_envelope_test.go`: WebAuthn REJECT relabel, PSEA cross-intent reuse, IdP-key fallback, PSEA SUPERCEDE.
+  - [ ] Vector type mismatch test (lands with typed parameters).
   - [ ] Review regression cases: restart between admission and completion, provider success with failed completion recording, wrong origin/RP ID/challenge on the real WebAuthn path, and explicit expected-tier enforcement.
   - [ ] Replay inside the skew window (`ico.Exp < t <= ico.Exp + 60s`).
-  - [ ] Override token with an arbitrary value must not bypass PoI.
+  - [x] Override token with an arbitrary value must not bypass PoI.
 
 ### 2.4 New Items from the 2026-11-09 Review
 
@@ -119,6 +136,13 @@ Newest first. Record what was done, what was found, and what was decided.
 
 ### 2026-11-09
 
+- **Added `mandrel-demo` and `mandrel-spec` submodules.** mandrel-demo vets and builds against the tier 0 mandrel-go through `go.work`; it has no unit tests and the end-to-end demo script was not run. Decision: PoI feature work is edited only in the submodules; standalone clones under the Mandrel project directory stay on `main`.
+- **Tier 0 fixes implemented (uncommitted)** in `mandrel-go` and `mandrel-collet` on `feat/poi-reference-impl`.
+  - mandrel-go: new `attestations.go` (per-profile node verifiers and a shared signed-claims check), `tiers.go` (`TierRank`, `TierSatisfies`), `CredentialResolver`/`EnrolledCredential` replacing `KeyResolver`, `WebAuthnRelyingParty`, `AppraisePSEA`, `PSEANonceForParent`, `PSEASelectionCommitment`, `Node.AssertionPayload`, and new `VerifiedSigner` attestation fields. `VerifyWebAuthnProof` signature changed (unreleased API, introduced after v1.0.19).
+  - mandrel-collet: override bypass removed, IdP self-key fallback removed, head-signer tier check, PSEA jti consumption and counter checks (`counters.go`), trust store loader (`truststore.go`), `--poi-trust-store` flag.
+  - Tests: `go test -race` passes in both modules. mandrel-go has 21 new top-level tests (35 cases with subtests) replacing the two prior envelope tests; Collet has 7 new tests. Each negative case asserts its error code or denial reason.
+  - Decision: override tokens fail closed because no format is specified anywhere; the old test asserted the bypass as a feature.
+  - Decision: PSEA nonce = base64url(parent node digest); selection = base64url(SHA-256(JCS({decision, target_node_hash}))). Pending confirmation with the PSEA author.
 - **Adversarial review of draft -01 and both submodules** against OAuth WG review feedback (OAuth WG review feedback and the PSEA -03 baseline sample).
   - Scope: diffs since Collet 6488224 and mandrel-go 7ac18ba; the full `enforcePoIChallenge` path, `server.go` forwarding, the PSEA and WebAuthn verifier branches, and the -00 to -01 draft diff.
   - Ran `go test` in both submodules: all pass. `GOWORK=off go build` of Collet succeeds against v1.0.17, which revealed the release plumbing gap.
