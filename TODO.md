@@ -27,8 +27,8 @@
   - [x] Correct `mandrel-collet/pkg/enforcement/layers.go` to compute `poi.HashParams(result.EffectiveParams)` instead of copying `result.HeadNodeHash`.
 - [x] **Bug Fix: Complete Parameter Replacement on `SUPERCEDE`**:
   - [x] Replace `req.Context` completely with `result.EffectiveParams` in `layers.go` rather than shallow map merging, ensuring omitted keys from `R0` are purged.
-- [ ] **Feature: Stateful Consume-Once Check**:
-  - [ ] Add stateful replay detection (tracking consumed `intent_id` / `jti`) wrapping stateless `VerifyEnvelope`.
+- [x] **Feature: Stateful Consume-Once Check**:
+  - [x] Add stateful replay detection (tracking consumed `intent_id` / `jti`) wrapping stateless `VerifyEnvelope`.
 - [ ] **Feature: PSEA Attestation Verifier Integration**:
   - [ ] Add verifier unpacker for `application/psea+jwt` (`typ: "psea-proof+jwt"`) using the baseline vector.
   - [ ] Verify claims: `psea_payload_hash`, `psea_uv.verified == true`, and P-256 public key verification.
@@ -37,7 +37,7 @@
 - [ ] **Regression & Conformance Test Suite**:
   - [x] Add positive test cases for parameter omission on SUPERCEDE.
   - [x] Add positive and negative test cases for CIR `CommittedParamsHash` calculation and in-flight parameter tampering detection.
-  - [ ] Add test cases for replay rejection.
+  - [x] Add positive, negative, TTL expiration, and concurrent race test cases for replay rejection.
   - [ ] Ingest the PSEA baseline test vector (`testdata/vectors/psea/psea-03-baseline-sample.json`).
 
 ---
