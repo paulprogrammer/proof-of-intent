@@ -4,7 +4,7 @@
 # The submodules land together, so they are verified together:
 #   mandrel-spec    schema export and fixture tests
 #   mandrel-go      vet, race tests, standalone (GOWORK=off) tests, vector drift
-#   mandrel-collet  vet, race tests
+#   mandrel-collet  vet, race tests, standalone (GOWORK=off) build against its mandrel-go pin
 #   mandrel-cli     vet, race tests, standalone (GOWORK=off) build
 #   mandrel-demo    vet, build; with DEMO=1, the podman end-to-end gate
 #
@@ -70,6 +70,7 @@ run "mandrel-go standalone" bash -c "cd '${STANDALONE}' && GOWORK=off go test -c
 step "mandrel-collet: vet and race tests"
 run "mandrel-collet vet" bash -c "cd '${ROOT}/mandrel-collet' && go vet ./..."
 run "mandrel-collet tests" bash -c "cd '${ROOT}/mandrel-collet' && go test -race -count=1 ./... >/dev/null"
+run "mandrel-collet standalone build" bash -c "cd '${ROOT}/mandrel-collet' && GOWORK=off go build ./... 2>&1 | tail -3; test \${PIPESTATUS[0]} -eq 0"
 
 step "mandrel-cli: vet, race tests, standalone build against its mandrel-go pin"
 run "mandrel-cli vet" bash -c "cd '${ROOT}/mandrel-cli' && go vet ./..."
