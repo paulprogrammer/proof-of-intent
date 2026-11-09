@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""
+Pre-commit hook: Lock historical IETF draft revisions.
+Rule: For any file matching draft-<stem>-<rev>.<ext>, only files
+matching the maximum revision for that stem may be modified or committed.
+"""
+import sys
+import os
+import re
+import subprocess
+
+DRAFT_PATTERN = re.compile(r"^draft-(.+)-(\d{2})\.(md|xml|txt|html)$")
+
+def main():
+    # 1. Get staged changes
+    res = subprocess.run(["git", "diff", "--cached", "--name-status"], capture_output=True, text=True, check=True)
+    staged_lines = res.stdout.strip().splitlines()
+    if not staged_lines:
+        return 0
+
+    # 2. Gather all known files (repo + working tree) to find max revision per stem
+    repo_files = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.strip().splitlines()
+    all_files = set(repo_files)
+    
+    # Also include newly staged or working directory files
+    for line in staged_lines:
+        parts = line.split()
+        if len(parts) >= 2:
+            all_files.add(parts[-1])
+            
+    # Include existing files in working directory as well
+    for root, _, files in os.walk("."):
+        if "/.git" in root:
+            continue
+        for f in files:
+            all_files.add(os.path.join(root, f))
+
+    # Find highest integer revision per stem
+    max_rev = {}
+    for f in all_files:
+        basename = os.path.basename(f)
+        m = DRAFT_PATTERN.match(basename)
+        if m:
+            stem, rev_str, _ = m.groups()
+            rev = int(rev_str)
+            if stem not in max_rev or rev > max_rev[stem]:
+                max_rev[stem] = rev
+
+    # 3. Block any staged modifications to earlier revisions
+    errors = []
+    for line in staged_lines:
+        parts = line.split()
+        if not parts:
+            continue
+        status = parts[0]
+        # For renames (e.g. R100 old new), check both
+        for f in parts[1:]:
+            basename = os.path.basename(f)
+            m = DRAFT_PATTERN.match(basename)
+            if m:
+                stem, rev_str, _ = m.groups()
+                rev = int(rev_str)
+                highest = max_rev.get(stem, 0)
+                if rev < highest:
+                    errors.append(
+                        f"  - {basename} (rev -{rev:02d} is locked; current highest revision for '{stem}' is -{highest:02d})"
+                    )
+
+    if errors:
+        print("\n[PRE-COMMIT HOOK BLOCKED] Attempted modification of locked historical draft files:")
+        for err in errors:
+            print(err)
+        print("\nPolicy: Published draft revisions are immutable. Only the highest revision can be modified.")
+        print("To bypass in an emergency, use 'git commit --no-verify'.\n")
+        sys.exit(1)
+
+    return 0
+
+if __name__ == "__main__":
+    main()

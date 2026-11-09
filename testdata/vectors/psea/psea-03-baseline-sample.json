@@ -1,0 +1,52 @@
+{
+  "note": "draft-yossif-psea-03 baseline sample, produced and verified with the reference verifier at e402b79. Test key, generated for this sample only. Not a conformance vector.",
+  "media_type": "application/psea+jwt",
+  "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBzZWEtcHJvb2Yrand0Iiwia2lkIjoiazEifQ.eyJpc3MiOiJhcy5leGFtcGxlIiwiYXVkIjoicnMuZXhhbXBsZSIsImlhdCI6MTc5NDIwODgwOSwiZXhwIjoxNzk0MjA5MTA5LCJqdGkiOiJCZ1ZYRm9lY3ppZTV2QWMtIiwidWVpZCI6IkFlNlZYTm82UVR5QWNzN0Q2Ty1maTVfRmtiV3BEbEY3WkNfZE1NakpoT1QwIiwiZWF0X3Byb2ZpbGUiOiJodHRwczovL2RhdGF0cmFja2VyLmlldGYub3JnL2RvYy9kcmFmdC15b3NzaWYtcHNlYS8iLCJwc2VhX29wIjoicGF5bWVudC5leGVjdXRlIiwicHNlYV90aWVyIjoiaGlnaCIsInBzZWFfcGF5bG9hZF9oYXNoIjoieE8zMk9aTDRTWFVacENsdE5WbkRjSGYzcTdQMmxSbUYrQ3IzcFJEZWtDOD0iLCJwc2VhX2NvdW50ZXIiOjEsInBzZWFfdXYiOnsidmVyaWZpZWQiOnRydWUsIm1ldGhvZCI6ImJpb21ldHJpYyJ9LCJwc2VhX3Byb29mX3ZlcnNpb24iOiIxIn0.J5Tv9L1mozBw4xV_GbxDavv_KENg6IRc58QUuTfR_Ymn6k1MDzA-NkCFOYbsavScza-0m_dww6vd01nE-gg5aw",
+  "protected_header": {
+    "alg": "ES256",
+    "typ": "psea-proof+jwt",
+    "kid": "k1"
+  },
+  "claims": {
+    "iss": "as.example",
+    "aud": "rs.example",
+    "iat": 1794208809,
+    "exp": 1794209109,
+    "jti": "BgVXFoeczie5vAc-",
+    "ueid": "Ae6VXNo6QTyAcs7D6O-fi5_FkbWpDlF7ZC_dMMjJhOT0",
+    "eat_profile": "https://datatracker.ietf.org/doc/draft-yossif-psea/",
+    "psea_op": "payment.execute",
+    "psea_tier": "high",
+    "psea_payload_hash": "xO32OZL4SXUZpCltNVnDcHf3q7P2lRmF+Cr3pRDekC8=",
+    "psea_counter": 1,
+    "psea_uv": {
+      "verified": true,
+      "method": "biometric"
+    },
+    "psea_proof_version": "1"
+  },
+  "verify_inputs": {
+    "action_payload": {
+      "operation": "transfer",
+      "target": "acct-9",
+      "amount": 500
+    },
+    "action_payload_jcs_utf8": "{\"amount\":500,\"operation\":\"transfer\",\"target\":\"acct-9\"}",
+    "op": "payment.execute",
+    "tier": "high",
+    "iss": "as.example",
+    "aud": "rs.example"
+  },
+  "enrollment": {
+    "kid": "k1",
+    "uv_enforced": true,
+    "principal": "alice",
+    "public_jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "3tjvtBkyefpfKbS0dYTw48Fp7HV-IZ6PZgDGGLXc134",
+      "y": "uRSko-K0QgTgvoG_LHvcufVI7v5116HoR8VqaFYU_m0"
+    }
+  },
+  "reference_verifier_result": "ACCEPT"
+}

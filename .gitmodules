@@ -1,0 +1,3 @@
+[submodule "mandrel-collet"]
+	path = mandrel-collet
+	url = git@gitlab.com:the-mandrel-project/mandrel-collet.git
