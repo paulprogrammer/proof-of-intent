@@ -10,3 +10,6 @@
 [submodule "mandrel-spec"]
 	path = mandrel-spec
 	url = git@gitlab.com:the-mandrel-project/mandrel-spec.git
+[submodule "mandrel-cli"]
+	path = mandrel-cli
+	url = git@gitlab.com:the-mandrel-project/mandrel-cli.git

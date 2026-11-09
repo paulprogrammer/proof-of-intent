@@ -79,7 +79,7 @@ For full details, see: https://www.ietf.org/about/note-well/
 
 ## 3. Reference Implementation Submodules
 
-The PoI reference implementation spans four Mandrel repositories. They
+The PoI reference implementation spans five Mandrel repositories. They
 are pinned here as Git submodules so that each draft revision maps to
 exact implementation commits for the Implementation Status section
 ([RFC 7942](https://www.rfc-editor.org/rfc/rfc7942)).
@@ -90,11 +90,12 @@ exact implementation commits for the Implementation Status section
 | `mandrel-collet` | Enforcement proxy: challenge issuance, admission, replay      |
 | `mandrel-demo`   | Mock IdP, mock Signing Vault, end-to-end demo scripts         |
 | `mandrel-spec`   | Proto, policy schema, canonical test vectors                  |
+| `mandrel-cli`    | Spec validator and Rego generator for policy actions          |
 
 Rules:
 
 1. **Edit PoI feature work only in these submodules.** All PoI changes
-   to the four repositories are made in the submodule working trees
+   to the five repositories are made in the submodule working trees
    under this repository, on the `feat/poi-reference-impl` branch. Do
    not make PoI changes in standalone clones of the same repositories
    elsewhere on disk; those clones stay on `main` and receive PoI work
@@ -105,11 +106,33 @@ Rules:
    submodule pointer update here when a submodule commit becomes part
    of the documented PoI implementation state.
 4. **Workspace builds differ from release builds.** `go.work` at the
-   repository root wires `mandrel-go`, `mandrel-collet`, and
-   `mandrel-demo` together (`mandrel-spec` is not a Go module).
+   repository root wires `mandrel-go`, `mandrel-collet`, `mandrel-demo`,
+   and `mandrel-cli` together (`mandrel-spec` is not a Go module).
    Standalone builds (`GOWORK=off`, Docker, CI) resolve each module's
    `go.mod` pin and do not see unreleased `mandrel-go` changes until a
    tag is cut and the pin is bumped.
+
+5. **The five submodules land together.** Verify them together before
+   any commit, with `scripts/verify-poi.sh` (`DEMO=1` adds the podman
+   end-to-end gate). mandrel-spec and mandrel-cli require a DCO
+   sign-off on every commit (`git commit -s`); mandrel-spec also
+   requires explicit human approval before check-in.
+
+Landing order (each repository's CI checks against its upstream `main`):
+
+1. **mandrel-spec.** Merge first. A proto change triggers mandrel-go's
+   `proto-drift` on `main` and fails the spec pipeline until mandrel-go
+   carries regenerated bindings, so merge proto changes and the
+   mandrel-go regeneration back to back. Vector changes require
+   `scripts/sync-vectors.sh` output in mandrel-go.
+2. **mandrel-go.** Merge, then tag a release.
+3. **mandrel-collet.** Bump the mandrel-go pin to that tag (standalone
+   and container builds use the pin, not `go.work`), then merge. New
+   flags must be documented in mandrel-web or `flag-drift` fails.
+4. **mandrel-cli.** Merge with or after mandrel-go; its validator must
+   reject the same policy actions the Collet rejects.
+5. **mandrel-demo.** Merge last; it builds against the others.
+6. **This repository.** Record the merged submodule commits.
 
 Setup after cloning:
 

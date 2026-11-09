@@ -1,6 +1,7 @@
 go 1.26.10
 
 use (
+	./mandrel-cli
 	./mandrel-collet
 	./mandrel-demo
 	./mandrel-go

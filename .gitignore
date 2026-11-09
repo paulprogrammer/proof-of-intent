@@ -8,3 +8,6 @@
 .cache/
 *.log
 *.err
+
+# Local Python environment for scripts/verify-poi.sh
+.venv/
