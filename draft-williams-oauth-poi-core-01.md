@@ -554,6 +554,8 @@ Content-Type: application/problem+json
 
 When a human approves an action or asserts modified parameters via `SUPERCEDE`, the Resource Server MUST execute the verified canonical parameters directly. The Resource Server MUST NOT return modified parameters to an autonomous LLM or AI agent for re-interpretation or re-submission, as doing so re-introduces the agent as a potential confused deputy between human signature and state execution. The intermediary agent SHOULD receive only a read-only execution receipt (`CIR`).
 
+PoI Core defines no override, bypass, or standing-approval token. When policy requires proof of human intent for a request, the only acceptable evidence is a PoIE that verifies for that request under Section 7.1. A Resource Server MUST NOT accept any other request attribute, header, context value, or token as a substitute for a PoIE, and MUST NOT treat a PoIE verified for one request as authorization for a different request. A standing grant covering a class of future actions would reintroduce the ambient, reusable capability that per-transaction attestation is designed to remove; such a mechanism, if needed, belongs in a separate specification with its own constraint language and security analysis.
+
 ## Key Smuggling, Cross-Origin Vault Isolation, and WebAuthn Permissions Policy
 
 Generating the EIK with `extractable: false` prevents exfiltration of raw private key bytes over the network. However, an attacker achieving Cross-Site Scripting (XSS) within a complex web application could attempt to invoke `crypto.subtle.sign()` in-situ (acting as a signing oracle).
