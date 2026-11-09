@@ -23,10 +23,10 @@
 
 - [x] **Submodule Setup**: Added `mandrel-collet` and `mandrel-go` submodules via native SSH (`git@gitlab.com:the-mandrel-project/mandrel-collet.git`, `mandrel-go.git`).
 - [x] **Working Branches**: Created and checked out `feat/poi-reference-impl` in both `mandrel-collet` and `mandrel-go`.
-- [ ] **Bug Fix: `CommittedParamsHash` Assignment**:
-  - [ ] Correct `mandrel-collet/pkg/enforcement/layers.go` (line 597) to compute `poi.HashParams(result.EffectiveParams)` instead of copying `result.HeadNodeHash`.
-- [ ] **Bug Fix: Complete Parameter Replacement on `SUPERCEDE`**:
-  - [ ] Replace `req.Context` completely with `result.EffectiveParams` in `layers.go` (line 573) rather than shallow map merging, ensuring omitted keys from `R0` are purged.
+- [x] **Bug Fix: `CommittedParamsHash` Assignment**:
+  - [x] Correct `mandrel-collet/pkg/enforcement/layers.go` to compute `poi.HashParams(result.EffectiveParams)` instead of copying `result.HeadNodeHash`.
+- [x] **Bug Fix: Complete Parameter Replacement on `SUPERCEDE`**:
+  - [x] Replace `req.Context` completely with `result.EffectiveParams` in `layers.go` rather than shallow map merging, ensuring omitted keys from `R0` are purged.
 - [ ] **Feature: Stateful Consume-Once Check**:
   - [ ] Add stateful replay detection (tracking consumed `intent_id` / `jti`) wrapping stateless `VerifyEnvelope`.
 - [ ] **Feature: PSEA Attestation Verifier Integration**:
@@ -35,7 +35,8 @@
 - [ ] **Feature: Passkey / WebAuthn Verification**:
   - [ ] Replace stub in `mandrel-go` returning `unsupported assurance tier` with WebAuthn assertion verification.
 - [ ] **Regression & Conformance Test Suite**:
-  - [ ] Add test cases for parameter omission on SUPERCEDE.
+  - [x] Add positive test cases for parameter omission on SUPERCEDE.
+  - [x] Add positive and negative test cases for CIR `CommittedParamsHash` calculation and in-flight parameter tampering detection.
   - [ ] Add test cases for replay rejection.
   - [ ] Ingest the PSEA baseline test vector (`testdata/vectors/psea/psea-03-baseline-sample.json`).
 
