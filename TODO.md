@@ -21,8 +21,8 @@
 
 ## 2. Reference Implementation Track (`mandrel-collet` on `feat/poi-reference-impl`)
 
-- [x] **Submodule Setup**: Added `mandrel-collet` submodule via native SSH (`git@gitlab.com:the-mandrel-project/mandrel-collet.git`).
-- [x] **Working Branch**: Created and checked out `feat/poi-reference-impl` from `main` (`6488224`).
+- [x] **Submodule Setup**: Added `mandrel-collet` and `mandrel-go` submodules via native SSH (`git@gitlab.com:the-mandrel-project/mandrel-collet.git`, `mandrel-go.git`).
+- [x] **Working Branches**: Created and checked out `feat/poi-reference-impl` in both `mandrel-collet` and `mandrel-go`.
 - [ ] **Bug Fix: `CommittedParamsHash` Assignment**:
   - [ ] Correct `mandrel-collet/pkg/enforcement/layers.go` (line 597) to compute `poi.HashParams(result.EffectiveParams)` instead of copying `result.HeadNodeHash`.
 - [ ] **Bug Fix: Complete Parameter Replacement on `SUPERCEDE`**:
