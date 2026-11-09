@@ -125,7 +125,9 @@ Landing order (each repository's CI checks against its upstream `main`):
    carries regenerated bindings, so merge proto changes and the
    mandrel-go regeneration back to back. Vector changes require
    `scripts/sync-vectors.sh` output in mandrel-go.
-2. **mandrel-go.** Merge, then tag a release.
+2. **mandrel-go.** Merge. The release job on `main` tags the next
+   version itself (semverbot predicts it from the highest semver tag,
+   prereleases included).
 3. **mandrel-collet.** Bump the mandrel-go pin to that tag (standalone
    and container builds use the pin, not `go.work`), then merge. New
    flags must be documented in mandrel-web or `flag-drift` fails.
