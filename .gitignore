@@ -11,3 +11,6 @@
 
 # Local Python environment for scripts/verify-poi.sh
 .venv/
+
+# Per-checkout agent instructions
+CLAUDE.local.md
