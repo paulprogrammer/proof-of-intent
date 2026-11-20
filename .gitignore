@@ -15,3 +15,6 @@
 # Per-checkout agent instructions
 CLAUDE.local.md
 NOTES.local.md
+
+# Local scratch files (never tracked)
+scratch/
