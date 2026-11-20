@@ -67,9 +67,10 @@ For full details, see: https://www.ietf.org/about/note-well/
    * Maintain **100% pure 7-bit ASCII** across all Markdown files per
      [RFC 7997](https://www.rfc-editor.org/rfc/rfc7997) (use `->`, `<=`,
      `>=`, `--`, and `...` rather than Unicode arrows or em-dashes).
-   * Preserve the `kramdown-rfc` YAML frontmatter at the top of
-     `draft-williams-oauth-poi-core-00.md` and
-     `draft-williams-oauth-poi-chained-state-00.md`.
+   * Preserve the `kramdown-rfc` YAML frontmatter at the top of active draft sources
+     (`draft-williams-oauth-poi-core-01.md` and
+     `draft-williams-oauth-poi-chained-state-01.md`); earlier revisions are
+     locked by `.githooks/pre-commit`.
    * Verify pure ASCII before submitting:
      ```sh
      LC_ALL=C grep -rn '[^ -~]' .

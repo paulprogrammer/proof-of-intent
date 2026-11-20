@@ -138,7 +138,7 @@ Status key: `[x]` done and verified, `[ ]` open. Items marked **(reopened)** wer
 - [x] **Unknown-Outcome Handling**: A target error after consumption burns the intent with no record beyond telemetry. Record the consumed/unknown state for reconciliation.
 - [x] **Signature Malleability**: The DER parser ignores trailing bytes, and raw vs. DER re-encoding changes the node hash without invalidating the signature. Use strict parsing.
 
-### 2.5 Second Adversarial Review (Post-rc.2) — Priority Queue
+### 2.5 Second Adversarial Review (Post-rc.2) -- Priority Queue
 
 Ordered by severity (Critical -> High -> Medium):
 
@@ -174,19 +174,20 @@ Ordered by severity (Critical -> High -> Medium):
 - [x] **12. [Medium] `IntentLayer` vs. `PolicyMatrixLayer` Envelope Isolation** (`mandrel-collet/pkg/enforcement/layers.go`):
   - Ensure a PoI envelope is verified against the specific layer/attribute that issued the challenge and is not double-consumed across layers in the same request.
 
-### 2.6 Third Adversarial Review (2026-11-09) — Open Items
+### 2.6 Third Adversarial Review (2026-11-09) -- Open Items
 
 Fixed in this pass (committed on the feature branches): plain-decimal thresholds (NaN and hex floats no longer skip a challenge), approvals evaluated at the Resource Server's attested `admitted_at` in chained envelopes, and `display_facts` covering every parameter. Details of the remaining findings are in the untracked `REVIEW.local.md`.
 
 - [ ] **Approval binds `context` only**: `task_payload` and the originating request are not bound by the approval. Needs a design decision (payload as a parameter, a separate digest, or documenting context as the only executable input).
 - [ ] **Pending quorum cannot be resumed** after the escalation challenge is lost or expires; needs mint-on-request and a stored chain.
 - [ ] **Denial after admission strands the intent**; the intent and matrix layers also cannot both challenge one request.
-- [ ] **`REJECT` is not recorded**; a rejected challenge can still be approved by another signer.
+- [x] **`REJECT` is recorded and terminal** (Finding 6): `VerifyEnvelope` returns `Decision: REJECT` statelessly; Collet ledger admits with `Reject: true`, consumes challenge and attestations, records `IntentRejected`, and refuses reapproval or new challenges for the occurrence.
 - [ ] **Unknown-outcome block is escapable** through the agent-supplied turn ID, extra context keys, or the 24-hour occurrence expiry.
 - [ ] Reopen 2.5 items 1, 2, 4, 6, 9, 10 and 12: not implemented as checked.
-- [ ] Library ignores `ico.required_tier`; WebAuthn challenge is hashed over a re-serialized payload; escalation challenges grow about 2.3x per hop; approver authorization is thin; smaller items in `REVIEW.local.md`.
-- [ ] **Release:** Collet's standalone build fails against the `v1.1.0-rc.2` pin (it needs `VerifiedSigner.AdmittedAt` and `PriorSigners`). Cut a mandrel-go release candidate and re-pin before the next collaborator snapshot.
-- [ ] Rebuild the draft outputs (`make`) and run idnits: the core and chained-state `-01` sources changed after the last build.
+- [x] **Escalation challenges grow about 2.3x per hop** (Finding 12): `prunePriorChain` strips carried challenges and assertions to `{seq, node_type, target/supercedes_node_hash, assurance_tier, node_hash}`; `pruneSigners` omits private authenticator IDs and counters. Size growth reduced to linear ~544 bytes per hop.
+- [ ] Library ignores `ico.required_tier`; WebAuthn challenge is hashed over a re-serialized payload; approver authorization is thin; smaller items in `REVIEW.local.md`.
+- [ ] **Release:** Collet's `go.mod` is pinned to the pushed `mandrel-go` pseudo-version (`v1.1.0-rc.2.0.20261120020503-c05502f3823e`) on `feat/poi-reference-impl` so standalone builds pass; cutting `v1.1.0-rc.3` / `poi-core-01-rc.3` remains open for the next collaborator snapshot.
+- [x] Rebuild the draft outputs (`make`) and run idnits: both `-01` TXT outputs report zero nits and both XML outputs report only the pre-Datatracker `SUBMISSION_TYPE_UNEXPECTED` informational comment.
 
 ---
 
@@ -203,6 +204,14 @@ Fixed in this pass (committed on the feature branches): plain-decimal thresholds
 ## 4. Activity Log
 
 Newest first. Record what was done, what was found, and what was decided.
+
+### 2026-11-19
+
+- **Content review, demo verification, and submodule commits/pushes.**
+  - `mandrel-go` (`c05502f`): Committed Finding 6 (`VerifyEnvelope` returns `DecisionReject` for terminal `REJECT` nodes and blocks appending after `REJECT`), fixed `VerifyJWS` formatting so non-canonical base64url segments return explicit errors instead of `%!w(<nil>)`, and added `TestVerifyJWS_NonCanonicalBase64Error`. Verified `gofmt`, `go vet`, `go test -race`, `sync-vectors.sh --check`, and standalone `GOWORK=off go test`; pushed to `origin/feat/poi-reference-impl`.
+  - `mandrel-collet` (`d5cb70d`, `195a003`): Committed Finding 6 (terminal `REJECTED` ledger state in memory and Redis) and Finding 12 (`prunePriorChain` and `pruneSigners` in escalation challenges). Expanded `terminal_rejection_test.go` across both memory and miniredis `RedisStore`, verified `challenge_replayed` on exact replay, and added `TestEnforcement_EscalationChallenge_LinearGrowth` (8 hops). Re-pinned `mandrel-go` pseudo-version (`v1.1.0-rc.2.0.20261120020503-c05502f3823e`) so standalone `GOWORK=off` build and tests pass; pushed to `origin/feat/poi-reference-impl`.
+  - `mandrel-demo` (`c3af845`): Added `SignReject` to `MockVault` (shared `signDecision` helper), `--poi-mode reject` to `orchestrator`, Scenarios 9 and 10 (terminal `REJECT` and post-rejection occurrence blocking) to `scripts/demo-poi.sh`, a 3-second `"long task"` handler to `finance-specialist`, and updated `mandrel-demo/README.md` (all-of OIDC scope flags, mandatory `transaction.value` context, Phase 6 optionality note, and Scenario F for `specialist-sloth`). Formatted `cmd/specialist-sloth/main.go` and tidied `go.mod` for standalone builds. Verified 10/10 Podman demo scenarios in both Redis and `REPLAY_STORE=memory` modes, plus README walkthrough Scenarios A-D and F; pushed to `origin/feat/poi-reference-impl`.
+  - Parent repo: Fixed `scripts/verify-poi.sh` to auto-detect/resolve `.venv/bin/python3` and verify `mandrel-demo` standalone builds; updated `README.md` and `CONTRIBUTING.md` to link active `-01` drafts, remove dead `IETF_SUBMISSION_GUIDE.md` link, and document submodules; removed UTF-8 em-dashes in `TODO.md` for pure 7-bit ASCII; rebuilt `-01` drafts with `make` (clean `idnits`); passed `DEMO=1 scripts/verify-poi.sh`.
 
 ### 2026-11-09
 

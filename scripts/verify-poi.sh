@@ -20,7 +20,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="${PYTHON:-python3}"
+if [ -z "${PYTHON:-}" ]; then
+  if [ -x "${ROOT}/.venv/bin/python3" ]; then
+    PYTHON="${ROOT}/.venv/bin/python3"
+  else
+    PYTHON="python3"
+  fi
+elif [[ "${PYTHON}" == */* && "${PYTHON}" != /* ]]; then
+  PYTHON="$(cd "$(dirname "${PYTHON}")" && pwd)/$(basename "${PYTHON}")"
+fi
 DEMO="${DEMO:-0}"
 BRANCH="${BRANCH:-feat/poi-reference-impl}"
 SUBMODULES=(mandrel-spec mandrel-go mandrel-collet mandrel-cli mandrel-demo)
@@ -77,8 +85,9 @@ run "mandrel-cli vet" bash -c "cd '${ROOT}/mandrel-cli' && go vet ./..."
 run "mandrel-cli tests" bash -c "cd '${ROOT}/mandrel-cli' && go test -race -count=1 ./... >/dev/null"
 run "mandrel-cli standalone build" bash -c "cd '${ROOT}/mandrel-cli' && GOWORK=off go build ./..."
 
-step "mandrel-demo: vet and build"
+step "mandrel-demo: vet, build, and standalone build"
 run "mandrel-demo vet" bash -c "cd '${ROOT}/mandrel-demo' && go vet ./... && go build ./..."
+run "mandrel-demo standalone build" bash -c "cd '${ROOT}/mandrel-demo' && GOWORK=off go build ./..."
 
 if [ "${DEMO}" = "1" ]; then
   step "mandrel-demo: podman end-to-end gate"
