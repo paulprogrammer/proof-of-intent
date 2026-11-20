@@ -586,7 +586,7 @@ When Tier 2 or Tier 3 {{WebAuthn}} runs inside that iframe, the host MUST delega
 PoI proves intent. It does not coordinate distributed transactions. It does define what recovery relies on:
 
 1. **Stable occurrence:** `intent_id` names the business occurrence and survives reapproval (Section 5.2); `challenge_id` names one approval.
-2. **Retry after admission:** Once a PoIE is admitted (Section 7.1, step 5), retrying the downstream call is an application action keyed on `intent_id` or the CIR. The application MUST NOT re-present the PoIE; that is rejected with `challenge_replayed`.
+2. **Retry after admission:** Once a PoIE is admitted (Section 7.1, step 5), retrying the downstream call is application behavior keyed on `intent_id` or the CIR; the application MUST NOT re-present the PoIE (which is rejected with `challenge_replayed`). `intent_id` identifies the occurrence, but does not by itself make a retry safe: unless the provider enforces idempotency on that key, the application has to determine whether the provider already acted before retrying.
 3. **Unknown outcomes block reapproval:** If an admitted action has an unknown outcome (the provider may have completed it before a crash or a lost response), the RS MUST NOT admit another PoIE for that `intent_id` until the outcome is resolved as completed or failed, and MUST reject such envelopes with `intent_outcome_unknown`. An admission with no recorded outcome, such as after a crash, counts as unknown.
 4. **Idempotency:** The RS SHOULD pass `intent_id` as the idempotency key to providers that support one, and SHOULD record a completion record (Section 7.2) once the outcome is known.
 
