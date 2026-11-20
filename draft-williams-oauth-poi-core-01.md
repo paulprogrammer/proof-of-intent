@@ -63,7 +63,7 @@ informative:
         org: Barefoot Coders, LLC
     date: 2026-11
     seriesinfo:
-      Internet-Draft: draft-williams-oauth-poi-chained-state-01
+      Internet-Draft: draft-williams-oauth-poi-chained-state-00
   PSEA:
     title: "PSEA Token Profile: An EAT Profile for Action-Bound, User-Verification-Gated Transaction-Confirmation Evidence"
     author:
@@ -95,7 +95,7 @@ AI agents and workflow orchestrators call high-consequence APIs on behalf of peo
 
 This document specifies the Proof-of-Intent (PoI) Core protocol. A Resource Server signs a challenge that binds the exact canonical parameters (RFC 8785) to human-readable facts. The person's client answers with a signed decision (APPROVE, REJECT, or SUPERCEDE with new parameters) using a session key certified by the Authorization Server (RFC 7800) or a WebAuthn or PSEA authenticator. The Resource Server verifies the evidence without a call to the Authorization Server, admits each approval once, and issues a signed receipt.
 
-Multi-approver chains, escalation, and concurrency are specified in draft-williams-oauth-poi-chained-state-01.
+Multi-approver chains, escalation, and concurrency are specified in draft-williams-oauth-poi-chained-state-00.
 
 --- middle
 
