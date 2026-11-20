@@ -12,9 +12,11 @@
 # Local Python environment for scripts/verify-poi.sh
 .venv/
 
-# Per-checkout agent instructions
+# Per-checkout agent instructions and local secrets
 CLAUDE.local.md
 NOTES.local.md
+.env
+.env.*
 
 # Local scratch files (never tracked)
 scratch/
