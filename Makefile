@@ -110,32 +110,21 @@ submit:
 		-F "user=$(DATATRACKER_USER)" \
 		-F "xml=@$$xml_file" \
 		"$(DATATRACKER_SUBMIT)")" || { echo "ERROR: curl upload to $(DATATRACKER_SUBMIT) failed." >&2; exit 1; }; \
-	python3 -c 'import json, sys, time, urllib.request; \
-raw = sys.argv[1]; \
-try: data = json.loads(raw) \
-except Exception: sys.exit(f"ERROR: unexpected non-JSON response from Datatracker:\n{raw}"); \
-if "error" in data or "id" not in data: \
-    sys.exit(f"ERROR: Datatracker rejected submission: {json.dumps(data, indent=2)}"); \
-sub_id = data["id"]; \
-status_api = data.get("status_url", f"https://datatracker.ietf.org/api/submission/{sub_id}/status"); \
-web_url = f"https://datatracker.ietf.org/submit/status/{sub_id}/"; \
-print(f"Submission accepted: id={sub_id}, draft={data.get(\"name\")}-{data.get(\"rev\")}"); \
-state = "validating"; \
-for _ in range(15): \
-    try: \
-        with urllib.request.urlopen(status_api, timeout=5) as r: \
-            st = json.loads(r.read().decode("utf-8")); \
-            state = st.get("state", state); \
-            if state != "validating": break \
-    except Exception: break; \
-    time.sleep(1); \
-print(f"Current Datatracker state: {state}"); \
-print(f"API status endpoint:       {status_api}"); \
-print(""); \
-print("========================================================================"); \
-print(" Open this verification URL in your browser to review and publish:"); \
-print(f" {web_url}"); \
-print("========================================================================");' "$$resp"
+	sub_id="$$(printf '%s' "$$resp" | jq -r '.id // empty' 2>/dev/null)"; \
+	if [ -z "$$sub_id" ]; then \
+		echo "ERROR: Datatracker submission failed:" >&2; \
+		printf '%s\n' "$$resp" | jq . >&2 || printf '%s\n' "$$resp" >&2; \
+		exit 1; \
+	fi; \
+	status_api="$$(printf '%s' "$$resp" | jq -r '.status_url // "https://datatracker.ietf.org/api/submission/\(.id)/status"')"; \
+	web_url="https://datatracker.ietf.org/submit/status/$$sub_id/"; \
+	printf '%s\n' "$$resp" | jq -r '"Submission accepted: id=\(.id), draft=\(.name)-\(.rev)"'; \
+	echo "API status endpoint: $$status_api"; \
+	echo ""; \
+	echo "========================================================================"; \
+	echo " Open this verification URL in your browser to review and publish:"; \
+	echo " $$web_url"; \
+	echo "========================================================================"
 
 help:
 	@echo "Usage: make [target]"
